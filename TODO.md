@@ -31,12 +31,12 @@ This document tracks the work needed to create a complete, fully-tested parser t
 
 ## Phase 1: Missing Verilog-2005 Features (High Priority)
 
-### 1.1 Declarations & Data Types
-- [ ] **Array declarations**
-  - [ ] Unpacked arrays: `reg [7:0] mem [0:255];`
-  - [ ] Multi-dimensional arrays: `reg [7:0] mem [0:15][0:31];`
-  - [ ] Test: Parse memory array declarations
-  - [ ] Test: Parse multi-dimensional arrays
+### 1.1 Declarations & Data Types ✅ COMPLETE
+- [x] **Array declarations** ✅
+  - [x] Unpacked arrays: `reg [7:0] mem [0:255];`
+  - [x] Multi-dimensional arrays: `reg [7:0] mem [0:15][0:31];`
+  - [x] Test: Parse memory array declarations
+  - [x] Test: Parse multi-dimensional arrays
 
 - [ ] **Memory declarations**
   - [ ] `memory` keyword support (if needed for spec compliance)
@@ -56,27 +56,27 @@ This document tracks the work needed to create a complete, fully-tested parser t
   - [ ] Statements: `->` event trigger, `@(event)`
   - [ ] Test: Event declarations and usage
 
-### 1.2 Procedural Blocks
-- [ ] **Initial blocks**
-  - [ ] Parser: `initial begin ... end`
-  - [ ] Test: Initial block parsing with various statements
-  - [ ] Test: Multiple initial blocks in one module
+### 1.2 Procedural Blocks ✅ COMPLETE
+- [x] **Initial blocks** ✅
+  - [x] Parser: `initial begin ... end`
+  - [x] Test: Initial block parsing with various statements
+  - [x] Test: Multiple initial blocks in one module
 
-- [ ] **Forever loops**
-  - [ ] Parser: `forever` statement
-  - [ ] Test: Forever loops in always/initial blocks
+- [x] **Forever loops** ✅
+  - [x] Parser: `forever` statement
+  - [x] Test: Forever loops in always/initial blocks
 
-- [ ] **Repeat loops**
-  - [ ] Parser: `repeat (N)` statement
-  - [ ] Test: Repeat with constant and variable counts
+- [x] **Repeat loops** ✅
+  - [x] Parser: `repeat (N)` statement
+  - [x] Test: Repeat with constant and variable counts
 
-- [ ] **While loops**
-  - [ ] Parser: `while (condition)` statement
-  - [ ] Test: While loops with various conditions
+- [x] **While loops** ✅
+  - [x] Parser: `while (condition)` statement
+  - [x] Test: While loops with various conditions
 
-- [ ] **Disable statements**
-  - [ ] Parser: `disable` statement
-  - [ ] Test: Disabling named blocks
+- [x] **Disable statements** ✅
+  - [x] Parser: `disable` statement
+  - [x] Test: Disabling named blocks
 
 ### 1.3 Tasks and Functions
 - [ ] **Task declarations**
