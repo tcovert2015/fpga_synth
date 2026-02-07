@@ -47,6 +47,8 @@ class TokenType(Enum):
     GENERATE = auto()
     ENDGENERATE = auto()
     GENVAR = auto()
+    SPECIFY = auto()
+    ENDSPECIFY = auto()
     POSEDGE = auto()
     NEGEDGE = auto()
     SIGNED = auto()
@@ -156,6 +158,8 @@ KEYWORDS: dict[str, TokenType] = {
     "generate": TokenType.GENERATE,
     "endgenerate": TokenType.ENDGENERATE,
     "genvar": TokenType.GENVAR,
+    "specify": TokenType.SPECIFY,
+    "endspecify": TokenType.ENDSPECIFY,
     "posedge": TokenType.POSEDGE,
     "negedge": TokenType.NEGEDGE,
     "signed": TokenType.SIGNED,

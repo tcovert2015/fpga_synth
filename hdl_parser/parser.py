@@ -359,6 +359,10 @@ class Parser:
             item.attributes = attrs
             return item
 
+        # Specify block (timing - ignored for synthesis)
+        if self._at(TokenType.SPECIFY):
+            return self._parse_specify()
+
         # Genvar
         if self._at(TokenType.GENVAR):
             self._eat(TokenType.GENVAR)
@@ -526,6 +530,20 @@ class Parser:
             event = self._eat(TokenType.IDENT).value
             self._expect_semi()
             return EventTrigger(event=event, line=tok.line, col=tok.col)
+
+        # System task call: $display(...), $finish;
+        if self._at(TokenType.IDENT) and self._cur().value.startswith("$"):
+            name = self._eat(TokenType.IDENT).value
+            args = []
+            if self._at(TokenType.LPAREN):
+                self._eat(TokenType.LPAREN)
+                while not self._at(TokenType.RPAREN):
+                    args.append(self._parse_expr())
+                    if not self._eat_if(TokenType.COMMA):
+                        break
+                self._eat(TokenType.RPAREN)
+            self._expect_semi()
+            return SystemTaskCall(name=name, args=args, line=tok.line, col=tok.col)
 
         if self._at(TokenType.IF):
             return self._parse_if()
@@ -905,6 +923,24 @@ class Parser:
         self._eat(TokenType.ENDCASE)
         return cs
 
+    def _parse_specify(self) -> SpecifyBlock:
+        """Parse specify block - for now just skip contents (timing ignored in synthesis)"""
+        tok = self._eat(TokenType.SPECIFY)
+
+        # Skip all tokens until endspecify
+        depth = 1
+        while depth > 0 and not self._at(TokenType.EOF):
+            if self._at(TokenType.SPECIFY):
+                depth += 1
+            elif self._at(TokenType.ENDSPECIFY):
+                depth -= 1
+                if depth == 0:
+                    break
+            self.pos += 1
+
+        self._eat(TokenType.ENDSPECIFY)
+        return SpecifyBlock(line=tok.line, col=tok.col)
+
     def _parse_generate(self) -> GenerateBlock:
         tok = self._eat(TokenType.GENERATE)
         gb = GenerateBlock(line=tok.line, col=tok.col)
@@ -1145,14 +1181,19 @@ class Parser:
     
     def _parse_primary(self) -> Expr:
         tok = self._cur()
-        
+
         # Number literal
         if self._at(TokenType.NUMBER):
             raw = self._eat(TokenType.NUMBER).value
             value, width, signed = self.resolve_number(raw)
             return NumberLiteral(raw=raw, value=value, width=width,
                                is_signed=signed, line=tok.line, col=tok.col)
-        
+
+        # String literal
+        if self._at(TokenType.STRING):
+            s = self._eat(TokenType.STRING).value
+            return StringLiteral(value=s, line=tok.line, col=tok.col)
+
         # Identifier (possibly hierarchical or function call)
         if self._at(TokenType.IDENT):
             name = self._eat(TokenType.IDENT).value

@@ -43,6 +43,12 @@ class NumberLiteral(Expr):
 
 
 @dataclass
+class StringLiteral(Expr):
+    """String literal: "hello world" """
+    value: str = ""
+
+
+@dataclass
 class Identifier(Expr):
     """A signal or parameter reference: my_signal"""
     name: str = ""
@@ -268,6 +274,13 @@ class EventTrigger(Statement):
     event: str = ""
 
 
+@dataclass
+class SpecifyBlock(ASTNode):
+    """Specify block: specify ... endspecify (timing specifications)"""
+    # For now, just store as unparsed - timing is typically ignored in synthesis
+    pass
+
+
 # ============================================================
 # Module-level constructs
 # ============================================================
@@ -348,6 +361,13 @@ class FunctionDecl(ASTNode):
 class TaskCall(Statement):
     """Task call statement: task_name(arg1, arg2);"""
     name: str = ""
+    args: list[Expr] = field(default_factory=list)
+
+
+@dataclass
+class SystemTaskCall(Statement):
+    """System task call: $display(...), $finish, etc."""
+    name: str = ""  # e.g., "$display"
     args: list[Expr] = field(default_factory=list)
 
 
