@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""
+Simple tool to parse Verilog files and display the AST.
+
+Usage:
+    python3 parse_verilog.py examples/counter.v
+    python3 parse_verilog.py examples/simple_alu.v --verbose
+"""
+
+import sys
+import os
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from fpga_synth.hdl_parser.parser import parse_verilog
+from fpga_synth.hdl_parser.ast_nodes import *
+
+
+def print_ast_summary(ast, filename, verbose=False):
+    """Parse and print a summary of the AST."""
+
+    print(f"\n{'='*60}")
+    print(f"Parsing: {filename}")
+    print(f"{'='*60}\n")
+
+    for module in ast.modules:
+        print(f"Module: {module.name}")
+        print(f"  Location: Line {module.line}, Col {module.col}")
+
+        # Parameters
+        if module.params:
+            print(f"\n  Parameters ({len(module.params)}):")
+            for param in module.params:
+                print(f"    - {param.name} = {param.value}")
+
+        # Ports
+        if module.ports:
+            print(f"\n  Ports ({len(module.ports)}):")
+            for port in module.ports:
+                width_str = ""
+                if port.range:
+                    width_str = f"[{port.range.msb}:{port.range.lsb}] "
+                net_str = f" {port.net_type}" if port.net_type != "wire" else ""
+                print(f"    - {port.direction:6} {width_str}{port.name}{net_str}")
+
+        # Body items
+        print(f"\n  Body Items ({len(module.body)}):")
+
+        wire_decls = [item for item in module.body if isinstance(item, NetDecl)]
+        if wire_decls:
+            print(f"    Wire/Reg Declarations: {len(wire_decls)}")
+            if verbose:
+                for decl in wire_decls:
+                    width_str = f"[{decl.range.msb}:{decl.range.lsb}] " if decl.range else ""
+                    print(f"      - {decl.net_type} {width_str}{decl.name}")
+
+        assigns = [item for item in module.body if isinstance(item, ContinuousAssign)]
+        if assigns:
+            print(f"    Continuous Assigns: {len(assigns)}")
+            if verbose:
+                for i, assign in enumerate(assigns, 1):
+                    print(f"      {i}. assign ... (Line {assign.line})")
+
+        always_blocks = [item for item in module.body if isinstance(item, AlwaysBlock)]
+        if always_blocks:
+            print(f"    Always Blocks: {len(always_blocks)}")
+            for i, block in enumerate(always_blocks, 1):
+                if block.is_star:
+                    sens = "@(*)"
+                else:
+                    sens_list = []
+                    for s in block.sensitivity:
+                        edge = f"{s.edge} " if s.edge else ""
+                        sens_list.append(f"{edge}{s.signal}")
+                    sens = f"@({', '.join(sens_list)})"
+                print(f"      {i}. always {sens} (Line {block.line})")
+                print(f"         Statements: {len(block.body)}")
+
+        instances = [item for item in module.body if isinstance(item, ModuleInstance)]
+        if instances:
+            print(f"    Module Instances: {len(instances)}")
+            if verbose:
+                for inst in instances:
+                    print(f"      - {inst.module_name} {inst.instance_name}")
+
+        if verbose:
+            print(f"\n  Raw AST:")
+            print(f"    {module}")
+
+    print(f"\n{'='*60}")
+    print("✓ Parsing successful!")
+    print(f"{'='*60}\n")
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python3 parse_verilog.py <verilog_file> [--verbose]")
+        print("\nExamples:")
+        print("  python3 parse_verilog.py examples/counter.v")
+        print("  python3 parse_verilog.py examples/simple_alu.v --verbose")
+        sys.exit(1)
+
+    verilog_file = Path(sys.argv[1])
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+
+    if not verilog_file.exists():
+        print(f"Error: File not found: {verilog_file}")
+        sys.exit(1)
+
+    try:
+        # Read and parse the file
+        source_code = verilog_file.read_text()
+        ast = parse_verilog(source_code, str(verilog_file))
+
+        # Print summary
+        print_ast_summary(ast, verilog_file.name, verbose)
+
+    except Exception as e:
+        print(f"\n❌ Error parsing {verilog_file}:")
+        print(f"   {e}\n")
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
