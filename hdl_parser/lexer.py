@@ -26,6 +26,7 @@ class Lexer:
         self.line = 1
         self.col = 1
         self.tokens: list[Token] = []
+        self.in_attribute = False  # Track if we're inside an attribute
     
     def _peek(self, offset=0) -> str:
         p = self.pos + offset
@@ -162,12 +163,31 @@ class Lexer:
             # Multi-character operators
             ch2 = ch + self._peek(1) if self.pos + 1 < len(self.source) else ch
             ch3 = ch2 + self._peek(2) if self.pos + 2 < len(self.source) else ch2
-            
+
+            # Attribute begin: (* but NOT (*)
+            # @(*) is sensitivity list, not an attribute
+            ch3_check = ""
+            if self.pos + 2 < len(self.source):
+                ch3_check = ch2 + self.source[self.pos + 2]
+
+            if ch2 == "(*" and ch3_check != "(*)":
+                self._advance(); self._advance()
+                self.tokens.append(Token(TokenType.ATTR_BEGIN, "(*", start_line, start_col))
+                self.in_attribute = True
+                continue
+
+            # Attribute end: *) - only if we're inside an attribute
+            if ch2 == "*)" and self.in_attribute:
+                self._advance(); self._advance()
+                self.tokens.append(Token(TokenType.ATTR_END, "*)", start_line, start_col))
+                self.in_attribute = False
+                continue
+
             if ch3 == ">>>":
                 self._advance(); self._advance(); self._advance()
                 self.tokens.append(Token(TokenType.ARSHIFT, ">>>", start_line, start_col))
                 continue
-            
+
             TWO_CHAR = {
                 "<<": TokenType.LSHIFT,
                 ">>": TokenType.RSHIFT,
@@ -178,7 +198,7 @@ class Lexer:
                 "&&": TokenType.LAND,
                 "||": TokenType.LOR,
             }
-            
+
             if ch2 in TWO_CHAR:
                 self._advance(); self._advance()
                 self.tokens.append(Token(TWO_CHAR[ch2], ch2, start_line, start_col))

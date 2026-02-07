@@ -100,7 +100,42 @@ class Parser:
             return (value, width, signed)
         else:
             return (int(raw), 32, False)
-    
+
+    # ---- Attributes ----
+
+    def _parse_attributes(self) -> dict[str, str]:
+        """Parse Verilog attributes: (* key1 = value1, key2 = value2 *)"""
+        attrs = {}
+        if not self._at(TokenType.ATTR_BEGIN):
+            return attrs
+
+        self._eat(TokenType.ATTR_BEGIN)
+
+        while not self._at(TokenType.ATTR_END):
+            # Parse key = value
+            key = self._eat(TokenType.IDENT).value
+
+            value = ""
+            if self._eat_if(TokenType.ASSIGN_OP):
+                # Value can be identifier, number, or string
+                if self._at(TokenType.IDENT):
+                    value = self._eat(TokenType.IDENT).value
+                elif self._at(TokenType.NUMBER):
+                    value = self._eat(TokenType.NUMBER).value
+                elif self._at(TokenType.STRING):
+                    value = self._eat(TokenType.STRING).value
+                else:
+                    value = self._eat(TokenType.IDENT).value  # Try to eat something
+
+            attrs[key] = value
+
+            # Comma separates multiple attributes
+            if not self._eat_if(TokenType.COMMA):
+                break
+
+        self._eat(TokenType.ATTR_END)
+        return attrs
+
     # ---- Top-level ----
     
     def parse(self) -> SourceFile:
@@ -113,8 +148,11 @@ class Parser:
     # ---- Module ----
     
     def _parse_module(self) -> Module:
+        # Parse attributes if present
+        attrs = self._parse_attributes()
+
         tok = self._eat(TokenType.MODULE)
-        mod = Module(line=tok.line, col=tok.col)
+        mod = Module(line=tok.line, col=tok.col, attributes=attrs)
         mod.name = self._eat(TokenType.IDENT).value
         
         # Optional parameter list: #(parameter ...)
@@ -205,9 +243,13 @@ class Parser:
     def _parse_module_item(self, mod: Optional[Module]) -> Optional[ASTNode]:
         tok = self._cur()
 
+        # Parse attributes if present
+        attrs = self._parse_attributes()
+
         # Wire / reg declaration
         if self._at(TokenType.WIRE, TokenType.REG):
             decl = self._parse_net_decl()
+            decl.attributes = attrs
             if mod:
                 mod.body.append(decl)
                 return None  # Already appended
@@ -218,7 +260,7 @@ class Parser:
             self._eat(TokenType.INTEGER)
             name = self._eat(TokenType.IDENT).value
             self._expect_semi()
-            decl = IntegerDecl(name=name, line=tok.line, col=tok.col)
+            decl = IntegerDecl(name=name, line=tok.line, col=tok.col, attributes=attrs)
             if mod:
                 mod.body.append(decl)
                 return None
@@ -227,6 +269,7 @@ class Parser:
         # Parameter / localparam in body
         if self._at(TokenType.PARAMETER, TokenType.LOCALPARAM):
             pd = self._parse_param_decl()
+            pd.attributes = attrs
             self._expect_semi()
             if mod:
                 mod.body.append(pd)
@@ -236,34 +279,46 @@ class Parser:
 
         # Continuous assign
         if self._at(TokenType.ASSIGN):
-            return self._parse_continuous_assign()
+            item = self._parse_continuous_assign()
+            item.attributes = attrs
+            return item
 
         # Always block
         if self._at(TokenType.ALWAYS):
-            return self._parse_always()
+            item = self._parse_always()
+            item.attributes = attrs
+            return item
 
         # Initial block
         if self._at(TokenType.INITIAL):
-            return self._parse_initial()
+            item = self._parse_initial()
+            item.attributes = attrs
+            return item
 
         # Task declaration
         if self._at(TokenType.TASK):
-            return self._parse_task()
+            item = self._parse_task()
+            item.attributes = attrs
+            return item
 
         # Function declaration
         if self._at(TokenType.FUNCTION):
-            return self._parse_function()
+            item = self._parse_function()
+            item.attributes = attrs
+            return item
 
         # Generate block
         if self._at(TokenType.GENERATE):
-            return self._parse_generate()
+            item = self._parse_generate()
+            item.attributes = attrs
+            return item
 
         # Genvar
         if self._at(TokenType.GENVAR):
             self._eat(TokenType.GENVAR)
             name = self._eat(TokenType.IDENT).value
             self._expect_semi()
-            decl = IntegerDecl(name=name, line=tok.line, col=tok.col)
+            decl = IntegerDecl(name=name, line=tok.line, col=tok.col, attributes=attrs)
             if mod:
                 mod.body.append(decl)
                 return None
@@ -275,7 +330,9 @@ class Parser:
             # Instantiation: modname [#(...)] instname (...)
             if (self._peek(1).type == TokenType.IDENT or
                 self._peek(1).type == TokenType.HASH):
-                return self._parse_module_instance()
+                item = self._parse_module_instance()
+                item.attributes = attrs
+                return item
 
         raise ParseError(f"Unexpected token in module body", tok)
     

@@ -96,8 +96,9 @@ class TokenType(Enum):
     
     # Special
     ATAT = auto()           # @@  (not real Verilog, placeholder)
-    STARPAREN = auto()      # (*  for attributes (ignored for now)
-    
+    ATTR_BEGIN = auto()     # (*  attribute begin
+    ATTR_END = auto()       # *)  attribute end
+
     EOF = auto()
 
 

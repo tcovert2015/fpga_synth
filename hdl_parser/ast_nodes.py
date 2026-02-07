@@ -20,6 +20,7 @@ class ASTNode:
     """Base class for all AST nodes."""
     line: int = 0
     col: int = 0
+    attributes: dict[str, str] = field(default_factory=dict)  # Verilog attributes (* key = value *)
 
 
 # ============================================================

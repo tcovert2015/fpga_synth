@@ -119,13 +119,15 @@ This document tracks the work needed to create a complete, fully-tested parser t
   - [x] Test: Nested generate constructs
   - [x] Test: Generate with module instances
 
-### 1.5 Attributes
-- [ ] **Attribute syntax**
-  - [ ] Lexer: `(* ... *)` attribute parsing (currently ignored)
-  - [ ] Parser: Attach attributes to declarations and statements
-  - [ ] AST: Store attributes in nodes
-  - [ ] Test: Attributes on modules, nets, instances
-  - [ ] Test: Multiple attributes
+### 1.5 Attributes ✅ COMPLETE
+- [x] **Attribute syntax** ✅
+  - [x] Lexer: `(* ... *)` attribute parsing with state tracking
+  - [x] Parser: Attach attributes to declarations and statements
+  - [x] AST: Store attributes in nodes (base ASTNode.attributes field)
+  - [x] Test: Attributes on modules, nets, instances
+  - [x] Test: Multiple attributes
+  - [x] Test: Attributes with and without values
+  - [x] Test: Numeric and string attribute values
 
 ### 1.6 Specify Blocks (Timing - Optional for Synthesis)
 - [ ] **Specify blocks**
