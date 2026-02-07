@@ -202,36 +202,42 @@ class Parser:
     
     # ---- Module body items ----
     
-    def _parse_module_item(self, mod: Module) -> Optional[ASTNode]:
+    def _parse_module_item(self, mod: Optional[Module]) -> Optional[ASTNode]:
         tok = self._cur()
-        
+
         # Wire / reg declaration
         if self._at(TokenType.WIRE, TokenType.REG):
             decl = self._parse_net_decl()
-            mod.body.append(decl)
-            return None  # Already appended
-        
+            if mod:
+                mod.body.append(decl)
+                return None  # Already appended
+            return decl
+
         # Integer declaration
         if self._at(TokenType.INTEGER):
             self._eat(TokenType.INTEGER)
             name = self._eat(TokenType.IDENT).value
             self._expect_semi()
             decl = IntegerDecl(name=name, line=tok.line, col=tok.col)
-            mod.body.append(decl)
-            return None
-        
+            if mod:
+                mod.body.append(decl)
+                return None
+            return decl
+
         # Parameter / localparam in body
         if self._at(TokenType.PARAMETER, TokenType.LOCALPARAM):
             pd = self._parse_param_decl()
             self._expect_semi()
-            mod.body.append(pd)
-            mod.params.append(pd)
-            return None
-        
+            if mod:
+                mod.body.append(pd)
+                mod.params.append(pd)
+                return None
+            return pd
+
         # Continuous assign
         if self._at(TokenType.ASSIGN):
             return self._parse_continuous_assign()
-        
+
         # Always block
         if self._at(TokenType.ALWAYS):
             return self._parse_always()
@@ -251,16 +257,18 @@ class Parser:
         # Generate block
         if self._at(TokenType.GENERATE):
             return self._parse_generate()
-        
+
         # Genvar
         if self._at(TokenType.GENVAR):
             self._eat(TokenType.GENVAR)
             name = self._eat(TokenType.IDENT).value
             self._expect_semi()
             decl = IntegerDecl(name=name, line=tok.line, col=tok.col)
-            mod.body.append(decl)
-            return None
-        
+            if mod:
+                mod.body.append(decl)
+                return None
+            return decl
+
         # Module instantiation: identifier identifier (...)
         if self._at(TokenType.IDENT):
             # Look ahead to distinguish net declaration from instantiation
@@ -268,7 +276,7 @@ class Parser:
             if (self._peek(1).type == TokenType.IDENT or
                 self._peek(1).type == TokenType.HASH):
                 return self._parse_module_instance()
-        
+
         raise ParseError(f"Unexpected token in module body", tok)
     
     def _parse_net_decl(self) -> NetDecl:
@@ -679,21 +687,155 @@ class Parser:
         self._eat(TokenType.ENDFUNCTION)
         return fd
 
+    def _parse_generate_item_or_block(self) -> list[ASTNode]:
+        """Parse either begin...end with module items or a single module item in generate context."""
+        if self._at(TokenType.BEGIN):
+            tok = self._eat(TokenType.BEGIN)
+            # Optional block name: begin : name
+            name = ""
+            if self._eat_if(TokenType.COLON):
+                name = self._eat(TokenType.IDENT).value
+
+            items = []
+            while not self._at(TokenType.END):
+                if self._at(TokenType.FOR):
+                    items.append(self._parse_generate_for())
+                elif self._at(TokenType.IF):
+                    items.append(self._parse_generate_if())
+                elif self._at(TokenType.CASE, TokenType.CASEX, TokenType.CASEZ):
+                    items.append(self._parse_generate_case())
+                else:
+                    item = self._parse_module_item(None)
+                    if item:
+                        items.append(item)
+            self._eat(TokenType.END)
+
+            # Wrap in a Block if it has a name
+            if name:
+                return [Block(name=name, stmts=items, line=tok.line, col=tok.col)]
+            else:
+                return items
+        else:
+            # Single module item
+            item = self._parse_module_item(None)
+            return [item] if item else []
+
+    def _parse_generate_if(self) -> IfStatement:
+        """Parse if statement in generate context (body contains module items)."""
+        tok = self._eat(TokenType.IF)
+        self._eat(TokenType.LPAREN)
+        cond = self._parse_expr()
+        self._eat(TokenType.RPAREN)
+
+        then_body = self._parse_generate_item_or_block()
+        else_body = []
+
+        if self._eat_if(TokenType.ELSE):
+            else_body = self._parse_generate_item_or_block()
+
+        return IfStatement(cond=cond, then_body=then_body, else_body=else_body,
+                          line=tok.line, col=tok.col)
+
+    def _parse_generate_for(self) -> ForStatement:
+        """Parse for loop in generate context (body contains module items)."""
+        tok = self._eat(TokenType.FOR)
+        self._eat(TokenType.LPAREN)
+
+        # Init
+        init_lhs = self._parse_expr()
+        self._eat(TokenType.ASSIGN_OP)
+        init_rhs = self._parse_expr()
+        init = BlockingAssign(lhs=init_lhs, rhs=init_rhs)
+        self._expect_semi()
+
+        # Condition
+        cond = self._parse_expr()
+        self._expect_semi()
+
+        # Update
+        upd_lhs = self._parse_expr()
+        self._eat(TokenType.ASSIGN_OP)
+        upd_rhs = self._parse_expr()
+        update = BlockingAssign(lhs=upd_lhs, rhs=upd_rhs)
+
+        self._eat(TokenType.RPAREN)
+
+        body = self._parse_generate_item_or_block()
+        return ForStatement(init=init, cond=cond, update=update, body=body,
+                           line=tok.line, col=tok.col)
+
+    def _parse_generate_case(self) -> CaseStatement:
+        """Parse case statement in generate context (body contains module items)."""
+        tok = self._cur()
+        kind = tok.value
+        self._eat(tok.type)  # case / casex / casez
+
+        self._eat(TokenType.LPAREN)
+        expr = self._parse_expr()
+        self._eat(TokenType.RPAREN)
+
+        cs = CaseStatement(kind=kind, expr=expr, line=tok.line, col=tok.col)
+
+        while not self._at(TokenType.ENDCASE):
+            if self._at(TokenType.DEFAULT):
+                self._eat(TokenType.DEFAULT)
+                self._eat(TokenType.COLON)
+                cs.default = self._parse_generate_item_or_block()
+            else:
+                ci = CaseItem(line=self._cur().line, col=self._cur().col)
+                # Parse comma-separated values
+                while True:
+                    ci.values.append(self._parse_expr())
+                    if not self._eat_if(TokenType.COMMA):
+                        break
+                self._eat(TokenType.COLON)
+                ci.body = self._parse_generate_item_or_block()
+                cs.items.append(ci)
+
+        self._eat(TokenType.ENDCASE)
+        return cs
+
     def _parse_generate(self) -> GenerateBlock:
         tok = self._eat(TokenType.GENERATE)
         gb = GenerateBlock(line=tok.line, col=tok.col)
 
         while not self._at(TokenType.ENDGENERATE):
             if self._at(TokenType.FOR):
-                gb.items.append(self._parse_for())
+                gb.items.append(self._parse_generate_for())
             elif self._at(TokenType.IF):
-                gb.items.append(self._parse_if())
+                gb.items.append(self._parse_generate_if())
+            elif self._at(TokenType.CASE, TokenType.CASEX, TokenType.CASEZ):
+                gb.items.append(self._parse_generate_case())
+            elif self._at(TokenType.BEGIN):
+                # Named generate block: begin : name ... end
+                tok = self._eat(TokenType.BEGIN)
+                name = ""
+                if self._eat_if(TokenType.COLON):
+                    name = self._eat(TokenType.IDENT).value
+                items = []
+                while not self._at(TokenType.END):
+                    if self._at(TokenType.FOR):
+                        items.append(self._parse_generate_for())
+                    elif self._at(TokenType.IF):
+                        items.append(self._parse_generate_if())
+                    elif self._at(TokenType.CASE, TokenType.CASEX, TokenType.CASEZ):
+                        items.append(self._parse_generate_case())
+                    else:
+                        # Module instance or other item
+                        item = self._parse_module_item(None)
+                        if item:
+                            items.append(item)
+                self._eat(TokenType.END)
+                gb.items.append(Block(name=name, stmts=items, line=tok.line, col=tok.col))
             elif self._at(TokenType.GENVAR):
                 self._eat(TokenType.GENVAR)
                 self._eat(TokenType.IDENT)
                 self._expect_semi()
             else:
-                raise ParseError("Unexpected token in generate block", self._cur())
+                # Try parsing as module instance or other module item
+                item = self._parse_module_item(None)
+                if item:
+                    gb.items.append(item)
 
         self._eat(TokenType.ENDGENERATE)
         return gb

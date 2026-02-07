@@ -100,22 +100,24 @@ This document tracks the work needed to create a complete, fully-tested parser t
   - [x] Parser: `automatic` keyword
   - [x] Test: Automatic vs static task/function behavior
 
-### 1.4 Generate Constructs (Complete)
-- [ ] **Generate if-else**
-  - [ ] Parser: `if (param) ... else ...` in generate
-  - [ ] Test: Conditional generation based on parameters
+### 1.4 Generate Constructs ✅ COMPLETE
+- [x] **Generate if-else** ✅
+  - [x] Parser: `if (param) ... else ...` in generate
+  - [x] Test: Conditional generation based on parameters
 
-- [ ] **Generate case**
-  - [ ] Parser: `case (param)` in generate
-  - [ ] Test: Generate case statements
+- [x] **Generate case** ✅
+  - [x] Parser: `case (param)` in generate
+  - [x] Test: Generate case statements
 
-- [ ] **Generate blocks with names**
-  - [ ] Parser: `begin : name ... end`
-  - [ ] Test: Named generate blocks
+- [x] **Generate blocks with names** ✅
+  - [x] Parser: `begin : name ... end`
+  - [x] Test: Named generate blocks
 
-- [ ] **Genvar improvements**
-  - [ ] Proper scope handling for genvar
-  - [ ] Test: Multiple genvars in nested loops
+- [x] **Genvar improvements** ✅
+  - [x] Proper scope handling for genvar
+  - [x] Test: Multiple genvars in nested loops
+  - [x] Test: Nested generate constructs
+  - [x] Test: Generate with module instances
 
 ### 1.5 Attributes
 - [ ] **Attribute syntax**
