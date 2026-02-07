@@ -78,27 +78,27 @@ This document tracks the work needed to create a complete, fully-tested parser t
   - [x] Parser: `disable` statement
   - [x] Test: Disabling named blocks
 
-### 1.3 Tasks and Functions
-- [ ] **Task declarations**
-  - [ ] Parser: `task` ... `endtask`
-  - [ ] Task inputs/outputs/inouts
-  - [ ] Task calls
-  - [ ] Test: Simple tasks
-  - [ ] Test: Tasks with multiple arguments
-  - [ ] Test: Recursive task calls (if supported)
+### 1.3 Tasks and Functions ✅ COMPLETE
+- [x] **Task declarations** ✅
+  - [x] Parser: `task` ... `endtask`
+  - [x] Task inputs/outputs/inouts
+  - [x] Task calls
+  - [x] Test: Simple tasks
+  - [x] Test: Tasks with multiple arguments
+  - [x] Test: Recursive task calls (if supported)
 
-- [ ] **Function declarations**
-  - [ ] Parser: `function` ... `endfunction`
-  - [ ] Function inputs
-  - [ ] Function return values
-  - [ ] Function calls in expressions
-  - [ ] Test: Simple functions
-  - [ ] Test: Functions returning different bit widths
-  - [ ] Test: Recursive functions
+- [x] **Function declarations** ✅
+  - [x] Parser: `function` ... `endfunction`
+  - [x] Function inputs
+  - [x] Function return values
+  - [x] Function calls in expressions
+  - [x] Test: Simple functions
+  - [x] Test: Functions returning different bit widths
+  - [x] Test: Recursive functions
 
-- [ ] **Automatic tasks/functions**
-  - [ ] Parser: `automatic` keyword
-  - [ ] Test: Automatic vs static task/function behavior
+- [x] **Automatic tasks/functions** ✅
+  - [x] Parser: `automatic` keyword
+  - [x] Test: Automatic vs static task/function behavior
 
 ### 1.4 Generate Constructs (Complete)
 - [ ] **Generate if-else**
