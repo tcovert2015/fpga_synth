@@ -50,10 +50,11 @@ class Identifier(Expr):
 
 @dataclass
 class BitSelect(Expr):
-    """Bit or part select: signal[7:0] or signal[3]"""
+    """Bit or part select: signal[7:0] or signal[3] or signal[base +: width]"""
     target: Expr = None
     msb: Expr = None
     lsb: Optional[Expr] = None  # None for single-bit select
+    select_type: str = "normal"  # "normal" ([:]), "plus" ([+:]), or "minus" ([-:])
 
 
 @dataclass

@@ -86,6 +86,8 @@ class TokenType(Enum):
     AT = auto()             # @
     HASH = auto()           # #
     ARROW = auto()          # -> (event trigger)
+    PLUSCOLON = auto()      # +: (indexed part-select ascending)
+    MINUSCOLON = auto()     # -: (indexed part-select descending)
 
     # Delimiters
     LPAREN = auto()         # (

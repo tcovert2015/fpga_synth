@@ -1116,15 +1116,29 @@ class Parser:
     def _parse_postfix(self) -> Expr:
         expr = self._parse_primary()
         
-        # Bit select / part select: expr[idx] or expr[msb:lsb]
+        # Bit select / part select: expr[idx] or expr[msb:lsb] or expr[base +: width] or expr[base -: width]
         while self._at(TokenType.LBRACKET):
             self._eat(TokenType.LBRACKET)
             msb = self._parse_expr()
             lsb = None
+            select_type = "normal"
+
             if self._eat_if(TokenType.COLON):
+                # Normal part-select: [msb:lsb]
                 lsb = self._parse_expr()
+            elif self._at(TokenType.PLUSCOLON):
+                # Indexed part-select ascending: [base +: width]
+                self._eat(TokenType.PLUSCOLON)
+                lsb = self._parse_expr()
+                select_type = "plus"
+            elif self._at(TokenType.MINUSCOLON):
+                # Indexed part-select descending: [base -: width]
+                self._eat(TokenType.MINUSCOLON)
+                lsb = self._parse_expr()
+                select_type = "minus"
+
             self._eat(TokenType.RBRACKET)
-            expr = BitSelect(target=expr, msb=msb, lsb=lsb,
+            expr = BitSelect(target=expr, msb=msb, lsb=lsb, select_type=select_type,
                             line=expr.line, col=expr.col)
         
         return expr

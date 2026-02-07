@@ -216,6 +216,8 @@ class Lexer:
                 "&&": TokenType.LAND,
                 "||": TokenType.LOR,
                 "->": TokenType.ARROW,
+                "+:": TokenType.PLUSCOLON,
+                "-:": TokenType.MINUSCOLON,
             }
 
             if ch2 in TWO_CHAR:
