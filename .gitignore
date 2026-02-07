@@ -8,6 +8,9 @@ __pycache__/
 dist/
 build/
 
+# Generated AST files
+*.ast
+
 # IDE
 .vscode/
 .idea/
