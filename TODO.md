@@ -175,19 +175,22 @@ This document tracks the work needed to create a complete, fully-tested parser t
   - [ ] `` `unconnected_drive``, `` `nounconnected_drive``
   - [ ] Test: Each directive individually
 
-### 1.9 Port Connection Styles
-- [ ] **Positional port connections**
-  - [ ] Parser: Module instances with positional ports
-  - [ ] Test: `mod inst (a, b, c);`
+### 1.9 Port Connection Styles ✅ COMPLETE (except SystemVerilog .* wildcard)
+- [x] **Positional port connections** ✅
+  - [x] Parser: Module instances with positional ports
+  - [x] Test: `mod inst (a, b, c);`
 
-- [ ] **Mixed port connections**
-  - [ ] Parser: Mix of positional and named ports
-  - [ ] Test: `mod inst (a, .b(sig_b), c);`
+- [x] **Mixed port connections** ✅
+  - [x] Parser: Mix of positional and named ports
+  - [x] Test: `mod inst (a, .b(sig_b), c);`
 
-- [ ] **Implicit port connections**
-  - [ ] Parser: `.port()` for unconnected
+- [x] **Implicit port connections** ✅
+  - [x] Parser: `.port()` for unconnected
+  - [x] Test: Unconnected ports
+  - [x] Test: Port connections with expressions
+
+- [ ] **SystemVerilog wildcard (deferred)**
   - [ ] Parser: `.*` for implicit connections (SystemVerilog)
-  - [ ] Test: Unconnected ports
   - [ ] Test: Implicit wildcard connections
 
 ### 1.10 Operators & Expressions (Complete)
