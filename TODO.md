@@ -213,11 +213,13 @@ Note: Memory keyword is not a standard Verilog keyword - arrays serve this purpo
   - [ ] Lexer: String escape sequences (`\n`, `\t`, etc.)
   - [ ] Test: Strings with escapes
 
-### 1.11 Hierarchical Names
-- [ ] **Hierarchical references**
-  - [ ] Parser: `top.sub1.sub2.signal`
-  - [ ] Test: Hierarchical signal references
-  - [ ] Test: Hierarchical parameter access
+### 1.11 Hierarchical Names ✅ COMPLETE
+- [x] **Hierarchical references** ✅
+  - [x] Parser: `top.sub1.sub2.signal` (dotted identifier parsing)
+  - [x] Test: Hierarchical signal references
+  - [x] Test: Hierarchical parameter access
+  - [x] Test: Hierarchical with bit/part select
+  - [x] Test: Hierarchical in expressions and always blocks
 
 ---
 

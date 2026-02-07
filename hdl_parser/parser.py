@@ -1139,12 +1139,17 @@ class Parser:
             return NumberLiteral(raw=raw, value=value, width=width,
                                is_signed=signed, line=tok.line, col=tok.col)
         
-        # Identifier (possibly a function call)
+        # Identifier (possibly hierarchical or function call)
         if self._at(TokenType.IDENT):
             name = self._eat(TokenType.IDENT).value
-            
+
+            # Check for hierarchical name: top.sub.signal
+            while self._at(TokenType.DOT):
+                self._eat(TokenType.DOT)
+                name += "." + self._eat(TokenType.IDENT).value
+
             # System function call: $clog2(...)
-            if name.startswith("$") or (self._at(TokenType.LPAREN) and 
+            if name.startswith("$") or (self._at(TokenType.LPAREN) and
                                          not self._peek(-2 if self.pos >= 2 else 0).type == TokenType.DOT):
                 # Only treat as function call if immediately followed by (
                 if self._at(TokenType.LPAREN):
@@ -1155,7 +1160,7 @@ class Parser:
                         self._eat_if(TokenType.COMMA)
                     self._eat(TokenType.RPAREN)
                     return FuncCall(name=name, args=args, line=tok.line, col=tok.col)
-            
+
             return Identifier(name=name, line=tok.line, col=tok.col)
         
         # Parenthesized expression
