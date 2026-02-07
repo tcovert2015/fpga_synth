@@ -51,7 +51,11 @@ class TokenType(Enum):
     NEGEDGE = auto()
     SIGNED = auto()
     INTEGER = auto()
-    
+    REAL = auto()
+    REALTIME = auto()
+    TIME = auto()
+    EVENT = auto()
+
     # Operators
     PLUS = auto()           # +
     MINUS = auto()          # -
@@ -81,7 +85,8 @@ class TokenType(Enum):
     COLON = auto()          # :
     AT = auto()             # @
     HASH = auto()           # #
-    
+    ARROW = auto()          # -> (event trigger)
+
     # Delimiters
     LPAREN = auto()         # (
     RPAREN = auto()         # )
@@ -153,4 +158,8 @@ KEYWORDS: dict[str, TokenType] = {
     "negedge": TokenType.NEGEDGE,
     "signed": TokenType.SIGNED,
     "integer": TokenType.INTEGER,
+    "real": TokenType.REAL,
+    "realtime": TokenType.REALTIME,
+    "time": TokenType.TIME,
+    "event": TokenType.EVENT,
 }

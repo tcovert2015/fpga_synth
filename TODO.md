@@ -38,23 +38,24 @@ This document tracks the work needed to create a complete, fully-tested parser t
   - [x] Test: Parse memory array declarations
   - [x] Test: Parse multi-dimensional arrays
 
-- [ ] **Memory declarations**
-  - [ ] `memory` keyword support (if needed for spec compliance)
-  - [ ] Test: Various memory sizes and configurations
+- [x] **Real and realtime types** ✅
+  - [x] Lexer: Real number literals (1.5, 3.14e-2, 2.5e10, 1.0e-3)
+  - [x] Parser: `real` and `realtime` declarations with initialization
+  - [x] AST: RealDecl node
+  - [x] Test: Real number parsing and declarations
 
-- [ ] **Real and realtime types**
-  - [ ] Lexer: Real number literals (1.5, 3.14e-2)
-  - [ ] Parser: `real` and `realtime` declarations
-  - [ ] Test: Real number parsing and declarations
+- [x] **Time type** ✅
+  - [x] Parser: `time` declarations with initialization
+  - [x] AST: TimeDecl node
+  - [x] Test: Time variable declarations
 
-- [ ] **Time type**
-  - [ ] Parser: `time` declarations
-  - [ ] Test: Time variable declarations
+- [x] **Event type** ✅
+  - [x] Parser: `event` declarations
+  - [x] Statements: `->` event trigger statement
+  - [x] AST: EventDecl and EventTrigger nodes
+  - [x] Test: Event declarations and usage
 
-- [ ] **Event type**
-  - [ ] Parser: `event` declarations
-  - [ ] Statements: `->` event trigger, `@(event)`
-  - [ ] Test: Event declarations and usage
+Note: Memory keyword is not a standard Verilog keyword - arrays serve this purpose
 
 ### 1.2 Procedural Blocks ✅ COMPLETE
 - [x] **Initial blocks** ✅

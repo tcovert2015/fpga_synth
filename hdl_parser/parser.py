@@ -73,28 +73,34 @@ class Parser:
     def resolve_number(raw: str) -> tuple[int, int, bool]:
         """Parse a Verilog number literal. Returns (value, width, signed)."""
         raw = raw.replace("_", "")
-        
+
+        # Check if this is a real number (has decimal point or scientific notation)
+        if "." in raw or "e" in raw.lower():
+            # For real numbers, store as 0 (actual float parsing not needed for synthesis)
+            # The raw string is preserved in NumberLiteral.raw
+            return (0, 32, False)
+
         if "'" in raw:
             parts = raw.split("'", 1)
             size_str = parts[0]
             rest = parts[1]
-            
+
             signed = False
             if rest and rest[0].lower() == 's':
                 signed = True
                 rest = rest[1:]
-            
+
             if not rest:
                 return (0, 32, False)
-            
+
             base_char = rest[0].lower()
             digits = rest[1:] if len(rest) > 1 else "0"
             digits = digits.replace("x", "0").replace("X", "0")
             digits = digits.replace("z", "0").replace("Z", "0")
-            
+
             base_map = {"b": 2, "o": 8, "d": 10, "h": 16}
             base = base_map.get(base_char, 10)
-            
+
             width = int(size_str) if size_str else 32
             value = int(digits, base) if digits else 0
             return (value, width, signed)
@@ -261,6 +267,46 @@ class Parser:
             name = self._eat(TokenType.IDENT).value
             self._expect_semi()
             decl = IntegerDecl(name=name, line=tok.line, col=tok.col, attributes=attrs)
+            if mod:
+                mod.body.append(decl)
+                return None
+            return decl
+
+        # Real / realtime declaration
+        if self._at(TokenType.REAL, TokenType.REALTIME):
+            kind = "real" if self._at(TokenType.REAL) else "realtime"
+            self._eat(self._cur().type)
+            name = self._eat(TokenType.IDENT).value
+            init_value = None
+            if self._eat_if(TokenType.ASSIGN_OP):
+                init_value = self._parse_expr()
+            self._expect_semi()
+            decl = RealDecl(kind=kind, name=name, init_value=init_value, line=tok.line, col=tok.col, attributes=attrs)
+            if mod:
+                mod.body.append(decl)
+                return None
+            return decl
+
+        # Time declaration
+        if self._at(TokenType.TIME):
+            self._eat(TokenType.TIME)
+            name = self._eat(TokenType.IDENT).value
+            init_value = None
+            if self._eat_if(TokenType.ASSIGN_OP):
+                init_value = self._parse_expr()
+            self._expect_semi()
+            decl = TimeDecl(name=name, init_value=init_value, line=tok.line, col=tok.col, attributes=attrs)
+            if mod:
+                mod.body.append(decl)
+                return None
+            return decl
+
+        # Event declaration
+        if self._at(TokenType.EVENT):
+            self._eat(TokenType.EVENT)
+            name = self._eat(TokenType.IDENT).value
+            self._expect_semi()
+            decl = EventDecl(name=name, line=tok.line, col=tok.col, attributes=attrs)
             if mod:
                 mod.body.append(decl)
                 return None
@@ -473,7 +519,14 @@ class Parser:
     
     def _parse_statement(self) -> Optional[Statement]:
         tok = self._cur()
-        
+
+        # Event trigger: -> event_name;
+        if self._at(TokenType.ARROW):
+            self._eat(TokenType.ARROW)
+            event = self._eat(TokenType.IDENT).value
+            self._expect_semi()
+            return EventTrigger(event=event, line=tok.line, col=tok.col)
+
         if self._at(TokenType.IF):
             return self._parse_if()
         

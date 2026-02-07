@@ -84,16 +84,16 @@ class Lexer:
     
     def _read_number(self) -> Token:
         """Read a Verilog number literal.
-        
-        Formats: 123, 8'hFF, 4'b1010, 3'd7, 'h1A, 'b1
+
+        Formats: 123, 8'hFF, 4'b1010, 3'd7, 'h1A, 'b1, 1.5, 2.5e10, 1.0e-3
         """
         start_line, start_col = self.line, self.col
         num_str = ""
-        
+
         # Read the size prefix or plain number
         while not self._at_end() and (self._peek().isdigit() or self._peek() == "_"):
             num_str += self._advance()
-        
+
         # Check for sized literal: <size>'<base><digits>
         if not self._at_end() and self._peek() == "'":
             num_str += self._advance()  # consume '
@@ -104,7 +104,25 @@ class Lexer:
                     self._peek() in "0123456789abcdefABCDEFxXzZ_"
                 ):
                     num_str += self._advance()
-        
+            return Token(TokenType.NUMBER, num_str, start_line, start_col)
+
+        # Check for real number: decimal point
+        if not self._at_end() and self._peek() == ".":
+            num_str += self._advance()  # consume .
+            # Read fractional part
+            while not self._at_end() and (self._peek().isdigit() or self._peek() == "_"):
+                num_str += self._advance()
+
+        # Check for scientific notation: e or E
+        if not self._at_end() and self._peek().lower() == "e":
+            num_str += self._advance()  # consume e/E
+            # Optional +/- sign
+            if not self._at_end() and self._peek() in "+-":
+                num_str += self._advance()
+            # Read exponent
+            while not self._at_end() and (self._peek().isdigit() or self._peek() == "_"):
+                num_str += self._advance()
+
         return Token(TokenType.NUMBER, num_str, start_line, start_col)
     
     def _read_ident_or_keyword(self) -> Token:
@@ -197,6 +215,7 @@ class Lexer:
                 ">=": TokenType.GE,
                 "&&": TokenType.LAND,
                 "||": TokenType.LOR,
+                "->": TokenType.ARROW,
             }
 
             if ch2 in TWO_CHAR:

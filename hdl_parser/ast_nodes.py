@@ -240,6 +240,33 @@ class IntegerDecl(ASTNode):
     name: str = ""
 
 
+@dataclass
+class RealDecl(ASTNode):
+    """real / realtime declaration: real x; realtime t;"""
+    kind: str = "real"  # "real" or "realtime"
+    name: str = ""
+    init_value: Optional[Expr] = None
+
+
+@dataclass
+class TimeDecl(ASTNode):
+    """time declaration: time t;"""
+    name: str = ""
+    init_value: Optional[Expr] = None
+
+
+@dataclass
+class EventDecl(ASTNode):
+    """event declaration: event e;"""
+    name: str = ""
+
+
+@dataclass
+class EventTrigger(Statement):
+    """Event trigger: -> event_name;"""
+    event: str = ""
+
+
 # ============================================================
 # Module-level constructs
 # ============================================================
