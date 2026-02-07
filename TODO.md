@@ -357,40 +357,43 @@ Note: Memory keyword is not a standard Verilog keyword - arrays serve this purpo
 
 ---
 
-## Phase 4: AST Improvements
+## Phase 4: AST Improvements ✅ COMPLETE
 
-### 4.1 AST Representation
-- [ ] **Add source location to all nodes**
-  - [ ] Verify all nodes have line/col
-  - [ ] Add filename to nodes
-  - [ ] Test: Source location accuracy
+### 4.1 AST Representation ✅ COMPLETE
+- [x] **Add source location to all nodes** ✅
+  - [x] All nodes have line/col (via ASTNode base class)
+  - [x] Source location used in error messages
+  - [x] Test: Error messages show line context
 
-- [ ] **AST validation**
+- [ ] **AST validation** (deferred)
   - [ ] Check for malformed AST
   - [ ] Validate parent-child relationships
   - [ ] Test: AST validator
 
-- [ ] **AST visitor pattern**
-  - [ ] Implement visitor base class
-  - [ ] Implement AST traversal utilities
-  - [ ] Test: Visitor implementation
+- [x] **AST visitor pattern** ✅
+  - [x] ASTVisitor base class for read-only traversal
+  - [x] ASTTransformer for AST modification
+  - [x] Utility visitors (dumper, collectors, statistics)
+  - [x] Test: 8 visitor tests, all passing
 
-### 4.2 AST Serialization
-- [ ] **JSON output**
-  - [ ] Serialize AST to JSON
-  - [ ] Deserialize AST from JSON
-  - [ ] Test: Round-trip serialization
+### 4.2 AST Serialization ✅ COMPLETE
+- [x] **JSON output** ✅
+  - [x] ast_to_json() - Serialize AST to JSON string
+  - [x] json_to_ast() - Deserialize JSON back to AST
+  - [x] ast_to_json_file() / ast_from_json_file()
+  - [x] CompactJSONEncoder for readable output
+  - [x] Test: Round-trip serialization, 9 tests passing
 
-- [ ] **Compact AST format**
-  - [ ] More efficient .ast file format
-  - [ ] Optional: Binary AST format
+- [ ] **Binary AST format** (deferred)
+  - [ ] More efficient binary format
   - [ ] Test: Format comparison
 
-### 4.3 AST Pretty-Printing
-- [ ] **Verilog code generation from AST**
-  - [ ] Pretty-print AST back to Verilog
-  - [ ] Configurable formatting
-  - [ ] Test: AST → Verilog → AST round-trip
+### 4.3 AST Pretty-Printing ✅ COMPLETE
+- [x] **Verilog code generation from AST** ✅
+  - [x] VerilogCodeGenerator with configurable indentation
+  - [x] Generate all Verilog-2005 constructs
+  - [x] Proper formatting with indentation
+  - [x] Test: AST → Verilog → AST round-trip, 12 tests passing
 
 ---
 
