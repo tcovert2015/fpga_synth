@@ -235,7 +235,11 @@ class Parser:
         # Always block
         if self._at(TokenType.ALWAYS):
             return self._parse_always()
-        
+
+        # Initial block
+        if self._at(TokenType.INITIAL):
+            return self._parse_initial()
+
         # Generate block
         if self._at(TokenType.GENERATE):
             return self._parse_generate()
@@ -365,7 +369,13 @@ class Parser:
         # Body: single statement or begin...end block
         ab.body = self._parse_statement_or_block()
         return ab
-    
+
+    def _parse_initial(self) -> InitialBlock:
+        tok = self._eat(TokenType.INITIAL)
+        ib = InitialBlock(line=tok.line, col=tok.col)
+        ib.body = self._parse_statement_or_block()
+        return ib
+
     def _parse_statement_or_block(self) -> list[Statement]:
         """Parse either begin...end or a single statement."""
         if self._at(TokenType.BEGIN):
@@ -399,7 +409,19 @@ class Parser:
         
         if self._at(TokenType.FOR):
             return self._parse_for()
-        
+
+        if self._at(TokenType.WHILE):
+            return self._parse_while()
+
+        if self._at(TokenType.REPEAT):
+            return self._parse_repeat()
+
+        if self._at(TokenType.FOREVER):
+            return self._parse_forever()
+
+        if self._at(TokenType.DISABLE):
+            return self._parse_disable()
+
         if self._at(TokenType.BEGIN):
             stmts = self._parse_begin_end()
             return Block(stmts=stmts, line=tok.line, col=tok.col)
@@ -499,7 +521,34 @@ class Parser:
         body = self._parse_statement_or_block()
         return ForStatement(init=init, cond=cond, update=update, body=body,
                            line=tok.line, col=tok.col)
-    
+
+    def _parse_while(self) -> WhileStatement:
+        tok = self._eat(TokenType.WHILE)
+        self._eat(TokenType.LPAREN)
+        cond = self._parse_expr()
+        self._eat(TokenType.RPAREN)
+        body = self._parse_statement_or_block()
+        return WhileStatement(cond=cond, body=body, line=tok.line, col=tok.col)
+
+    def _parse_repeat(self) -> RepeatStatement:
+        tok = self._eat(TokenType.REPEAT)
+        self._eat(TokenType.LPAREN)
+        count = self._parse_expr()
+        self._eat(TokenType.RPAREN)
+        body = self._parse_statement_or_block()
+        return RepeatStatement(count=count, body=body, line=tok.line, col=tok.col)
+
+    def _parse_forever(self) -> ForeverStatement:
+        tok = self._eat(TokenType.FOREVER)
+        body = self._parse_statement_or_block()
+        return ForeverStatement(body=body, line=tok.line, col=tok.col)
+
+    def _parse_disable(self) -> DisableStatement:
+        tok = self._eat(TokenType.DISABLE)
+        target = self._eat(TokenType.IDENT).value
+        self._expect_semi()
+        return DisableStatement(target=target, line=tok.line, col=tok.col)
+
     def _parse_generate(self) -> GenerateBlock:
         tok = self._eat(TokenType.GENERATE)
         gb = GenerateBlock(line=tok.line, col=tok.col)

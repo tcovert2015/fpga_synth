@@ -24,6 +24,7 @@ class TokenType(Enum):
     LOCALPARAM = auto()
     ASSIGN = auto()
     ALWAYS = auto()
+    INITIAL = auto()
     BEGIN = auto()
     END = auto()
     IF = auto()
@@ -34,6 +35,10 @@ class TokenType(Enum):
     ENDCASE = auto()
     DEFAULT = auto()
     FOR = auto()
+    WHILE = auto()
+    REPEAT = auto()
+    FOREVER = auto()
+    DISABLE = auto()
     GENERATE = auto()
     ENDGENERATE = auto()
     GENVAR = auto()
@@ -115,6 +120,7 @@ KEYWORDS: dict[str, TokenType] = {
     "localparam": TokenType.LOCALPARAM,
     "assign": TokenType.ASSIGN,
     "always": TokenType.ALWAYS,
+    "initial": TokenType.INITIAL,
     "begin": TokenType.BEGIN,
     "end": TokenType.END,
     "if": TokenType.IF,
@@ -125,6 +131,10 @@ KEYWORDS: dict[str, TokenType] = {
     "endcase": TokenType.ENDCASE,
     "default": TokenType.DEFAULT,
     "for": TokenType.FOR,
+    "while": TokenType.WHILE,
+    "repeat": TokenType.REPEAT,
+    "forever": TokenType.FOREVER,
+    "disable": TokenType.DISABLE,
     "generate": TokenType.GENERATE,
     "endgenerate": TokenType.ENDGENERATE,
     "genvar": TokenType.GENVAR,

@@ -158,6 +158,32 @@ class ForStatement(Statement):
 
 
 @dataclass
+class WhileStatement(Statement):
+    """while loop: while (condition) ..."""
+    cond: Expr = None
+    body: list[Statement] = field(default_factory=list)
+
+
+@dataclass
+class RepeatStatement(Statement):
+    """repeat loop: repeat (N) ..."""
+    count: Expr = None
+    body: list[Statement] = field(default_factory=list)
+
+
+@dataclass
+class ForeverStatement(Statement):
+    """forever loop: forever ..."""
+    body: list[Statement] = field(default_factory=list)
+
+
+@dataclass
+class DisableStatement(Statement):
+    """disable statement: disable block_name;"""
+    target: str = ""
+
+
+@dataclass
 class Block(Statement):
     """begin...end block, optionally named."""
     name: str = ""
@@ -236,6 +262,12 @@ class AlwaysBlock(ASTNode):
     """always @(...) begin ... end"""
     sensitivity: list[SensItem] = field(default_factory=list)
     is_star: bool = False  # always @(*)
+    body: list[Statement] = field(default_factory=list)
+
+
+@dataclass
+class InitialBlock(ASTNode):
+    """initial begin ... end"""
     body: list[Statement] = field(default_factory=list)
 
 
