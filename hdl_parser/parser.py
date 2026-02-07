@@ -240,6 +240,14 @@ class Parser:
         if self._at(TokenType.INITIAL):
             return self._parse_initial()
 
+        # Task declaration
+        if self._at(TokenType.TASK):
+            return self._parse_task()
+
+        # Function declaration
+        if self._at(TokenType.FUNCTION):
+            return self._parse_function()
+
         # Generate block
         if self._at(TokenType.GENERATE):
             return self._parse_generate()
@@ -426,10 +434,27 @@ class Parser:
             stmts = self._parse_begin_end()
             return Block(stmts=stmts, line=tok.line, col=tok.col)
         
-        # Assignment: lhs = rhs; or lhs <= rhs;
+        # Task call or assignment
         if self._at(TokenType.IDENT, TokenType.LBRACE):
+            # Look ahead to distinguish task call from assignment
+            # Task call: identifier(args);
+            # Assignment: identifier = expr;
+            if self._at(TokenType.IDENT) and self._peek(1).type == TokenType.LPAREN:
+                # Could be task call
+                name = self._eat(TokenType.IDENT).value
+                self._eat(TokenType.LPAREN)
+                args = []
+                while not self._at(TokenType.RPAREN):
+                    args.append(self._parse_expr())
+                    if not self._eat_if(TokenType.COMMA):
+                        break
+                self._eat(TokenType.RPAREN)
+                self._expect_semi()
+                return TaskCall(name=name, args=args, line=tok.line, col=tok.col)
+
+            # Otherwise parse as assignment
             lhs = self._parse_expr()
-            
+
             if self._at(TokenType.ASSIGN_OP):
                 self._eat(TokenType.ASSIGN_OP)
                 rhs = self._parse_expr()
@@ -549,10 +574,115 @@ class Parser:
         self._expect_semi()
         return DisableStatement(target=target, line=tok.line, col=tok.col)
 
+    def _parse_task(self) -> TaskDecl:
+        tok = self._eat(TokenType.TASK)
+        td = TaskDecl(line=tok.line, col=tok.col)
+
+        # Optional: automatic
+        if self._at(TokenType.AUTOMATIC):
+            td.automatic = True
+            self._eat(TokenType.AUTOMATIC)
+
+        td.name = self._eat(TokenType.IDENT).value
+        self._expect_semi()
+
+        # Task body: declarations and statements
+        while not self._at(TokenType.ENDTASK):
+            if self._at(TokenType.INPUT):
+                self._eat(TokenType.INPUT)
+                # Parse input declaration(s)
+                port = self._parse_task_port("input")
+                td.inputs.append(port)
+                self._expect_semi()
+            elif self._at(TokenType.OUTPUT):
+                self._eat(TokenType.OUTPUT)
+                port = self._parse_task_port("output")
+                td.outputs.append(port)
+                self._expect_semi()
+            elif self._at(TokenType.INOUT):
+                self._eat(TokenType.INOUT)
+                port = self._parse_task_port("inout")
+                td.inouts.append(port)
+                self._expect_semi()
+            elif self._at(TokenType.REG, TokenType.INTEGER, TokenType.WIRE):
+                # Local variable declaration - skip for now
+                self._parse_net_decl()
+            else:
+                # Statement
+                stmt = self._parse_statement()
+                if stmt:
+                    td.body.append(stmt)
+
+        self._eat(TokenType.ENDTASK)
+        return td
+
+    def _parse_task_port(self, direction: str) -> PortDecl:
+        """Parse a task/function port declaration."""
+        tok = self._cur()
+        pd = PortDecl(line=tok.line, col=tok.col)
+        pd.direction = direction
+
+        # Optional: reg
+        if self._at(TokenType.REG):
+            pd.net_type = "reg"
+            self._eat(TokenType.REG)
+
+        # Optional: signed
+        if self._at(TokenType.SIGNED):
+            pd.signed = True
+            self._eat(TokenType.SIGNED)
+
+        # Optional: range
+        if self._at(TokenType.LBRACKET):
+            pd.range = self._parse_range()
+
+        pd.name = self._eat(TokenType.IDENT).value
+        return pd
+
+    def _parse_function(self) -> FunctionDecl:
+        tok = self._eat(TokenType.FUNCTION)
+        fd = FunctionDecl(line=tok.line, col=tok.col)
+
+        # Optional: automatic
+        if self._at(TokenType.AUTOMATIC):
+            fd.automatic = True
+            self._eat(TokenType.AUTOMATIC)
+
+        # Optional: signed
+        if self._at(TokenType.SIGNED):
+            fd.signed = True
+            self._eat(TokenType.SIGNED)
+
+        # Optional: return range
+        if self._at(TokenType.LBRACKET):
+            fd.return_type = self._parse_range()
+
+        fd.name = self._eat(TokenType.IDENT).value
+        self._expect_semi()
+
+        # Function body: input declarations and statements
+        while not self._at(TokenType.ENDFUNCTION):
+            if self._at(TokenType.INPUT):
+                self._eat(TokenType.INPUT)
+                port = self._parse_task_port("input")
+                fd.inputs.append(port)
+                self._expect_semi()
+            elif self._at(TokenType.REG, TokenType.INTEGER):
+                # Local variable declaration
+                self._parse_net_decl()
+            else:
+                # Statement
+                stmt = self._parse_statement()
+                if stmt:
+                    fd.body.append(stmt)
+
+        self._eat(TokenType.ENDFUNCTION)
+        return fd
+
     def _parse_generate(self) -> GenerateBlock:
         tok = self._eat(TokenType.GENERATE)
         gb = GenerateBlock(line=tok.line, col=tok.col)
-        
+
         while not self._at(TokenType.ENDGENERATE):
             if self._at(TokenType.FOR):
                 gb.items.append(self._parse_for())
@@ -564,7 +694,7 @@ class Parser:
                 self._expect_semi()
             else:
                 raise ParseError("Unexpected token in generate block", self._cur())
-        
+
         self._eat(TokenType.ENDGENERATE)
         return gb
     

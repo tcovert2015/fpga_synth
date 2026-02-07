@@ -293,6 +293,35 @@ class GenerateBlock(ASTNode):
     items: list[ASTNode] = field(default_factory=list)
 
 
+@dataclass
+class TaskDecl(ASTNode):
+    """Task declaration: task name; ... endtask"""
+    name: str = ""
+    automatic: bool = False
+    inputs: list[PortDecl] = field(default_factory=list)
+    outputs: list[PortDecl] = field(default_factory=list)
+    inouts: list[PortDecl] = field(default_factory=list)
+    body: list[Statement] = field(default_factory=list)
+
+
+@dataclass
+class FunctionDecl(ASTNode):
+    """Function declaration: function [range] name; ... endfunction"""
+    name: str = ""
+    automatic: bool = False
+    return_type: Optional[Range] = None  # Return width
+    signed: bool = False
+    inputs: list[PortDecl] = field(default_factory=list)
+    body: list[Statement] = field(default_factory=list)
+
+
+@dataclass
+class TaskCall(Statement):
+    """Task call statement: task_name(arg1, arg2);"""
+    name: str = ""
+    args: list[Expr] = field(default_factory=list)
+
+
 # ============================================================
 # Top-level
 # ============================================================

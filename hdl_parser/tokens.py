@@ -39,6 +39,11 @@ class TokenType(Enum):
     REPEAT = auto()
     FOREVER = auto()
     DISABLE = auto()
+    TASK = auto()
+    ENDTASK = auto()
+    FUNCTION = auto()
+    ENDFUNCTION = auto()
+    AUTOMATIC = auto()
     GENERATE = auto()
     ENDGENERATE = auto()
     GENVAR = auto()
@@ -135,6 +140,11 @@ KEYWORDS: dict[str, TokenType] = {
     "repeat": TokenType.REPEAT,
     "forever": TokenType.FOREVER,
     "disable": TokenType.DISABLE,
+    "task": TokenType.TASK,
+    "endtask": TokenType.ENDTASK,
+    "function": TokenType.FUNCTION,
+    "endfunction": TokenType.ENDFUNCTION,
+    "automatic": TokenType.AUTOMATIC,
     "generate": TokenType.GENERATE,
     "endgenerate": TokenType.ENDGENERATE,
     "genvar": TokenType.GENVAR,
