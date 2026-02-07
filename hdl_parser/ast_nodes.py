@@ -177,21 +177,23 @@ class Range(ASTNode):
 
 @dataclass
 class PortDecl(ASTNode):
-    """Port declaration: input [7:0] data"""
+    """Port declaration: input [7:0] data, input [7:0] mem [0:255]"""
     direction: str = "input"   # "input", "output", "inout"
     net_type: str = "wire"     # "wire", "reg"
     signed: bool = False
-    range: Optional[Range] = None
+    range: Optional[Range] = None  # Packed dimension (bit width)
     name: str = ""
+    array_dims: list[Range] = field(default_factory=list)  # Unpacked dimensions
 
 
 @dataclass
 class NetDecl(ASTNode):
-    """Wire/reg declaration: wire [3:0] foo; / reg [7:0] bar;"""
+    """Wire/reg declaration: wire [3:0] foo; / reg [7:0] mem [0:255];"""
     net_type: str = "wire"
     signed: bool = False
-    range: Optional[Range] = None
+    range: Optional[Range] = None  # Packed dimension (bit width)
     name: str = ""
+    array_dims: list[Range] = field(default_factory=list)  # Unpacked dimensions
     init_value: Optional[Expr] = None
 
 

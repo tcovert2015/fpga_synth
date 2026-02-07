@@ -182,8 +182,13 @@ class Parser:
         # Optional: range
         if self._at(TokenType.LBRACKET):
             pd.range = self._parse_range()
-        
+
         pd.name = self._eat(TokenType.IDENT).value
+
+        # Optional array dimensions (unpacked arrays)
+        while self._at(TokenType.LBRACKET):
+            pd.array_dims.append(self._parse_range())
+
         return pd
     
     def _parse_range(self) -> Range:
@@ -273,11 +278,15 @@ class Parser:
             nd.range = self._parse_range()
         
         nd.name = self._eat(TokenType.IDENT).value
-        
+
+        # Optional array dimensions (unpacked arrays)
+        while self._at(TokenType.LBRACKET):
+            nd.array_dims.append(self._parse_range())
+
         # Optional initial value
         if self._eat_if(TokenType.ASSIGN_OP):
             nd.init_value = self._parse_expr()
-        
+
         self._expect_semi()
         return nd
     
