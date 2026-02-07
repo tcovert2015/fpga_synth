@@ -26,36 +26,86 @@ from fpga_synth.hdl_parser.ast_nodes import *
 
 
 class ParseError(Exception):
-    def __init__(self, msg: str, token: Token):
-        super().__init__(f"Parse error at L{token.line}:{token.col}: {msg} (got {token.type.name} = {token.value!r})")
+    def __init__(self, msg: str, token: Token, source_lines: list[str] = None, suggestion: str = None):
         self.token = token
+        self.source_lines = source_lines
+        self.suggestion = suggestion
+
+        # Build error message with context
+        error_msg = f"Parse error at L{token.line}:{token.col}: {msg} (got {token.type.name} = {token.value!r})"
+
+        # Add source context if available
+        if source_lines and 1 <= token.line <= len(source_lines):
+            line_text = source_lines[token.line - 1]
+            error_msg += f"\n\n  {token.line:4d} | {line_text}"
+            error_msg += f"\n       | {' ' * (token.col - 1)}^"
+
+        # Add suggestion if available
+        if suggestion:
+            error_msg += f"\n\nSuggestion: {suggestion}"
+
+        super().__init__(error_msg)
 
 
 class Parser:
     """Recursive-descent parser producing an AST."""
-    
-    def __init__(self, tokens: list[Token]):
+
+    def __init__(self, tokens: list[Token], source: str = ""):
         self.tokens = tokens
         self.pos = 0
+        self.source_lines = source.splitlines() if source else []
     
     # ---- Token navigation ----
-    
+
     def _cur(self) -> Token:
         return self.tokens[self.pos]
-    
+
     def _peek(self, offset=0) -> Token:
         p = self.pos + offset
         if p < len(self.tokens):
             return self.tokens[p]
         return self.tokens[-1]  # EOF
-    
+
     def _at(self, *types: TokenType) -> bool:
         return self._cur().type in types
-    
+
+    def _suggest_fix(self, expected: TokenType, got: Token) -> Optional[str]:
+        """Suggest fixes for common parsing mistakes."""
+        # Missing semicolon
+        if expected == TokenType.SEMICOLON:
+            if got.type in (TokenType.END, TokenType.ENDMODULE, TokenType.ELSE):
+                return "Add a semicolon ';' at the end of the previous statement"
+            return "Add a semicolon ';' to end the statement"
+
+        # assign vs = confusion
+        if expected == TokenType.ASSIGN and got.type == TokenType.ASSIGN_OP:
+            return "Use 'assign' keyword for continuous assignment outside always blocks"
+
+        # <= vs = confusion in always blocks
+        if expected == TokenType.ASSIGN_OP and got.value == "<=":
+            return "Use '=' for blocking assignments or '<=' for non-blocking"
+
+        # Missing begin/end
+        if expected == TokenType.END and got.type != TokenType.END:
+            return "Add 'end' to close the block (every 'begin' needs an 'end')"
+
+        if expected == TokenType.BEGIN:
+            return "Use 'begin...end' for multi-statement blocks"
+
+        # Parenthesis mismatch
+        if expected == TokenType.RPAREN:
+            return "Check for matching parentheses - add ')'"
+
+        if expected == TokenType.RBRACKET:
+            return "Check for matching brackets - add ']'"
+
+        return None
+
     def _eat(self, tt: TokenType) -> Token:
         tok = self._cur()
         if tok.type != tt:
-            raise ParseError(f"Expected {tt.name}", tok)
+            suggestion = self._suggest_fix(tt, tok)
+            raise ParseError(f"Expected {tt.name}", tok, self.source_lines, suggestion)
         self.pos += 1
         return tok
     
@@ -384,7 +434,7 @@ class Parser:
                 item.attributes = attrs
                 return item
 
-        raise ParseError(f"Unexpected token in module body", tok)
+        raise ParseError(f"Unexpected token in module body", tok, self.source_lines)
     
     def _parse_net_decl(self) -> NetDecl:
         tok = self._cur()
@@ -608,8 +658,8 @@ class Parser:
             name = self._eat(TokenType.IDENT).value
             self._expect_semi()
             return None  # Treat as declaration, not a statement
-        
-        raise ParseError("Expected statement", tok)
+
+        raise ParseError("Expected statement", tok, self.source_lines)
     
     def _parse_if(self) -> IfStatement:
         tok = self._eat(TokenType.IF)
@@ -1228,8 +1278,8 @@ class Parser:
         # Concatenation or replication: {a, b} or {4{a}}
         if self._at(TokenType.LBRACE):
             return self._parse_concat_or_repeat()
-        
-        raise ParseError("Expected expression", tok)
+
+        raise ParseError("Expected expression", tok, self.source_lines)
     
     def _parse_concat_or_repeat(self) -> Expr:
         tok = self._eat(TokenType.LBRACE)
@@ -1262,5 +1312,5 @@ class Parser:
 def parse_verilog(source: str, filename: str = "<input>") -> SourceFile:
     """Parse Verilog source code into an AST."""
     tokens = lex(source, filename)
-    parser = Parser(tokens)
+    parser = Parser(tokens, source)
     return parser.parse()
