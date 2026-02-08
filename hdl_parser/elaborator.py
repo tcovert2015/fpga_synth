@@ -132,7 +132,9 @@ class Elaborator:
         for item in module.body:
             if isinstance(item, ContinuousAssign):
                 self._elaborate_assign(item)
-            # TODO: AlwaysBlock, InitialBlock, ModuleInstance, etc.
+            elif isinstance(item, AlwaysBlock):
+                self._elaborate_always_block(item)
+            # TODO: InitialBlock, ModuleInstance, etc.
 
     def _elaborate_assign(self, assign: ContinuousAssign):
         """
@@ -163,6 +165,161 @@ class Elaborator:
             # Update driver pin's net to point to LHS net
             rhs_net.driver.net = lhs_net
 
+    def _elaborate_always_block(self, always: AlwaysBlock):
+        """
+        Elaborate an always block.
+
+        Detects sequential vs combinational based on sensitivity list:
+        - @(posedge clk) or @(negedge rst) → Sequential (creates DFF cells)
+        - @(*) → Combinational (elaborates as continuous logic)
+        """
+        # Check if this is sequential (has edge-sensitive signals)
+        has_edge = any(sens.edge in ('posedge', 'negedge') for sens in always.sensitivity)
+
+        if has_edge:
+            self._elaborate_sequential_always(always)
+        else:
+            # Combinational always block - elaborate as continuous assignments
+            self._elaborate_combinational_always(always)
+
+    def _elaborate_sequential_always(self, always: AlwaysBlock):
+        """Elaborate sequential always block with flip-flops."""
+        # Find clock and reset signals
+        clk_signal = None
+        rst_signal = None
+        rst_polarity = None  # 'posedge' or 'negedge'
+
+        for sens in always.sensitivity:
+            if sens.edge == 'posedge':
+                if 'clk' in sens.signal.name.lower():
+                    clk_signal = sens.signal.name
+                else:
+                    # Assume first posedge is clock
+                    if clk_signal is None:
+                        clk_signal = sens.signal.name
+            elif sens.edge == 'negedge':
+                # Usually reset
+                rst_signal = sens.signal.name
+                rst_polarity = 'negedge'
+
+        if not clk_signal:
+            raise ElaborationError("Sequential always block must have a clock signal")
+
+        # Analyze the always block body to find register assignments
+        # For now, simple case: direct non-blocking assignments
+        for stmt in always.body:
+            if isinstance(stmt, NonBlockingAssign):
+                self._create_dff(stmt, clk_signal, rst_signal, rst_polarity)
+            elif isinstance(stmt, IfStatement):
+                # Handle if statement (possibly reset logic)
+                self._elaborate_sequential_if(stmt, clk_signal, rst_signal, rst_polarity)
+
+    def _elaborate_sequential_if(self, if_stmt: IfStatement, clk_signal: str,
+                                   rst_signal: Optional[str], rst_polarity: Optional[str]):
+        """Elaborate if statement in sequential context (handles reset)."""
+        # Check if condition is reset check
+        is_reset_check = False
+        if rst_signal and isinstance(if_stmt.cond, UnaryOp):
+            if if_stmt.cond.op == '!' and isinstance(if_stmt.cond.operand, Identifier):
+                if if_stmt.cond.operand.name == rst_signal:
+                    is_reset_check = True
+
+        if is_reset_check:
+            # Then branch is reset, else branch is normal operation
+            # For now, create DFF with reset from else branch
+            for stmt in if_stmt.else_body:
+                if isinstance(stmt, NonBlockingAssign):
+                    self._create_dff(stmt, clk_signal, rst_signal, rst_polarity)
+        else:
+            # Not a reset check - this could be enable logic
+            # Process assignments in then branch
+            for stmt in if_stmt.then_body:
+                if isinstance(stmt, NonBlockingAssign):
+                    self._create_dff(stmt, clk_signal, rst_signal, rst_polarity)
+            # Note: For proper enable, we'd need DFFRE (DFF with reset and enable)
+
+    def _create_dff(self, assign: NonBlockingAssign, clk_signal: str,
+                    rst_signal: Optional[str], rst_polarity: Optional[str]):
+        """Create a DFF cell for a register assignment."""
+        if not isinstance(assign.lhs, Identifier):
+            return  # Skip complex LHS for now
+
+        reg_name = assign.lhs.name
+
+        # Determine DFF type
+        if rst_signal:
+            cell_op = CellOp.DFFR  # DFF with reset
+        else:
+            cell_op = CellOp.DFF   # Simple DFF
+
+        # Create DFF cell
+        cell = Cell(name=f"dff_{reg_name}", op=cell_op)
+
+        # Get register net (should already exist from declaration)
+        if reg_name not in self.net_map:
+            # Create net if not declared
+            net = Net(name=reg_name, width=BitWidth(0, 0))
+            self.netlist.add_net(net)
+            self.net_map[reg_name] = net
+
+        reg_net = self.net_map[reg_name]
+
+        # Add pins
+        clk_pin = cell.add_input("CLK", BitWidth(0, 0))
+        d_pin = cell.add_input("D", reg_net.width)
+        q_pin = cell.add_output("Q", reg_net.width)
+
+        if rst_signal:
+            rst_pin = cell.add_input("RST", BitWidth(0, 0))
+            # Connect reset signal
+            if rst_signal in self.net_map:
+                self.net_map[rst_signal].add_sink(rst_pin)
+
+        # Connect clock
+        if clk_signal in self.net_map:
+            self.net_map[clk_signal].add_sink(clk_pin)
+
+        # Elaborate RHS to get D input
+        rhs_net = self._elaborate_expr(assign.rhs)
+        rhs_net.add_sink(d_pin)
+
+        # Connect Q output to register net
+        reg_net.set_driver(q_pin)
+
+        self.netlist.add_cell(cell)
+
+    def _elaborate_combinational_always(self, always: AlwaysBlock):
+        """Elaborate combinational always block."""
+        # For now, treat as continuous assignments
+        # TODO: Handle more complex statements
+        for stmt in always.body:
+            if isinstance(stmt, BlockingAssign):
+                # Convert to continuous assignment form
+                self._elaborate_blocking_assign(stmt)
+
+    def _elaborate_blocking_assign(self, assign: BlockingAssign):
+        """Elaborate blocking assignment (in combinational context)."""
+        if not isinstance(assign.lhs, Identifier):
+            return
+
+        lhs_name = assign.lhs.name
+
+        # Get or create LHS net
+        if lhs_name not in self.net_map:
+            net = Net(name=lhs_name, width=BitWidth(0, 0))
+            self.netlist.add_net(net)
+            self.net_map[lhs_name] = net
+
+        lhs_net = self.net_map[lhs_name]
+
+        # Elaborate RHS
+        rhs_net = self._elaborate_expr(assign.rhs)
+
+        # Connect
+        if rhs_net.driver:
+            lhs_net.set_driver(rhs_net.driver)
+            rhs_net.driver.net = lhs_net
+
     def _elaborate_expr(self, expr: Expr) -> Net:
         """
         Elaborate an expression into cells.
@@ -189,6 +346,9 @@ class Elaborator:
 
         elif isinstance(expr, Concat):
             return self._elaborate_concat(expr)
+
+        elif isinstance(expr, BitSelect):
+            return self._elaborate_bit_select(expr)
 
         else:
             raise ElaborationError(f"Unsupported expression type: {type(expr).__name__}")
@@ -365,6 +525,44 @@ class Elaborator:
         # Create output net
         out_net = Net(name=f"_concat_{cell.id}", width=BitWidth.from_width(total_width))
         out_net.set_driver(y_pin)
+        self.netlist.add_net(out_net)
+
+        return out_net
+
+    def _elaborate_bit_select(self, expr: BitSelect) -> Net:
+        """Elaborate bit select or part select."""
+        # Elaborate target
+        target_net = self._elaborate_expr(expr.target)
+
+        # Create SLICE cell
+        cell = Cell(name=f"slice_{target_net.name}", op=CellOp.SLICE)
+
+        # Evaluate bit indices
+        msb = self._eval_const_expr(expr.msb)
+        if expr.lsb is not None:
+            lsb = self._eval_const_expr(expr.lsb)
+        else:
+            lsb = msb  # Single bit select
+
+        # Store slice range in attributes
+        cell.attributes["msb"] = msb
+        cell.attributes["lsb"] = lsb
+
+        # Determine output width
+        out_width = msb - lsb + 1
+
+        # Add pins
+        in_pin = cell.add_input("A", target_net.width)
+        out_pin = cell.add_output("Y", BitWidth.from_width(out_width))
+
+        # Connect
+        target_net.add_sink(in_pin)
+
+        self.netlist.add_cell(cell)
+
+        # Create output net
+        out_net = Net(name=f"_slice_{cell.id}", width=BitWidth.from_width(out_width))
+        out_net.set_driver(out_pin)
         self.netlist.add_net(out_net)
 
         return out_net
