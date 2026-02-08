@@ -34,6 +34,7 @@ class Elaborator:
         self.netlist: Optional[Netlist] = None
         self.net_map: Dict[str, Net] = {}  # signal name → Net
         self.parameters: Dict[str, int] = {}  # parameter name → value
+        self.memories: Dict[str, tuple[BitWidth, int]] = {}  # memory name → (data_width, depth)
 
     def elaborate(self, ast: SourceFile) -> Netlist:
         """
@@ -61,6 +62,7 @@ class Elaborator:
         self.netlist = Netlist(name=module.name)
         self.net_map = {}
         self.parameters = {}
+        self.memories = {}
 
         # Phase 1: Resolve parameters
         self._resolve_parameters(module)
@@ -116,16 +118,30 @@ class Elaborator:
                 # Note: Output net is created when the driving logic is elaborated
 
     def _elaborate_declarations(self, module: Module):
-        """Create nets for wire/reg declarations."""
+        """Create nets for wire/reg declarations and detect memory arrays."""
         for item in module.body:
             if isinstance(item, NetDecl):
                 width = self._get_width(item.range)
 
-                # Create net if not already created (e.g., by port)
-                if item.name not in self.net_map:
-                    net = Net(name=item.name, width=width)
-                    self.netlist.add_net(net)
-                    self.net_map[item.name] = net
+                # Check if this is a memory array (has unpacked dimensions)
+                if item.array_dims:
+                    # This is a memory array: reg [7:0] mem [0:255]
+                    # Extract depth from first dimension
+                    depth_range = item.array_dims[0]
+                    dim_high = self._eval_const_expr(depth_range.msb)
+                    dim_low = self._eval_const_expr(depth_range.lsb)
+                    depth = abs(dim_high - dim_low) + 1
+
+                    # Register as memory
+                    self.memories[item.name] = (width, depth)
+                    # Note: We don't create a single net for the memory
+                    # Instead, each access creates MEMRD/MEMWR cells
+                else:
+                    # Regular signal - create net if not already created (e.g., by port)
+                    if item.name not in self.net_map:
+                        net = Net(name=item.name, width=width)
+                        self.netlist.add_net(net)
+                        self.net_map[item.name] = net
 
     def _elaborate_body(self, module: Module):
         """Elaborate all module body items."""
@@ -226,23 +242,40 @@ class Elaborator:
 
         if is_reset_check:
             # Then branch is reset, else branch is normal operation
-            # For now, create DFF with reset from else branch
-            for stmt in if_stmt.else_body:
-                if isinstance(stmt, NonBlockingAssign):
-                    self._create_dff(stmt, clk_signal, rst_signal, rst_polarity)
+            # Process else branch recursively
+            self._elaborate_sequential_body(if_stmt.else_body, clk_signal, rst_signal, rst_polarity)
         else:
             # Not a reset check - this could be enable logic
-            # Process assignments in then branch
-            for stmt in if_stmt.then_body:
-                if isinstance(stmt, NonBlockingAssign):
-                    self._create_dff(stmt, clk_signal, rst_signal, rst_polarity)
+            # Process then branch recursively
+            self._elaborate_sequential_body(if_stmt.then_body, clk_signal, rst_signal, rst_polarity)
             # Note: For proper enable, we'd need DFFRE (DFF with reset and enable)
+
+    def _elaborate_sequential_body(self, stmts: list, clk_signal: str,
+                                     rst_signal: Optional[str], rst_polarity: Optional[str]):
+        """Recursively elaborate statements in a sequential context."""
+        for stmt in stmts:
+            if isinstance(stmt, NonBlockingAssign):
+                self._create_dff(stmt, clk_signal, rst_signal, rst_polarity)
+            elif isinstance(stmt, IfStatement):
+                self._elaborate_sequential_if(stmt, clk_signal, rst_signal, rst_polarity)
 
     def _create_dff(self, assign: NonBlockingAssign, clk_signal: str,
                     rst_signal: Optional[str], rst_polarity: Optional[str]):
-        """Create a DFF cell for a register assignment."""
+        """Create a DFF cell for a register assignment or memory write."""
+        # Check if LHS is a memory write: mem[addr] <= data
+        if isinstance(assign.lhs, BitSelect):
+            if isinstance(assign.lhs.target, Identifier) and assign.lhs.target.name in self.memories:
+                # This is a memory write
+                self._elaborate_memory_write(
+                    mem_name=assign.lhs.target.name,
+                    addr_expr=assign.lhs.msb,
+                    data_expr=assign.rhs,
+                    clk_signal=clk_signal
+                )
+                return
+
         if not isinstance(assign.lhs, Identifier):
-            return  # Skip complex LHS for now
+            return  # Skip other complex LHS for now
 
         reg_name = assign.lhs.name
 
@@ -530,7 +563,13 @@ class Elaborator:
         return out_net
 
     def _elaborate_bit_select(self, expr: BitSelect) -> Net:
-        """Elaborate bit select or part select."""
+        """Elaborate bit select, part select, or memory access."""
+        # Check if target is a memory array
+        if isinstance(expr.target, Identifier) and expr.target.name in self.memories:
+            # This is a memory read: mem[addr]
+            return self._elaborate_memory_read(expr.target.name, expr.msb)
+
+        # Regular bit select/part select
         # Elaborate target
         target_net = self._elaborate_expr(expr.target)
 
@@ -566,6 +605,80 @@ class Elaborator:
         self.netlist.add_net(out_net)
 
         return out_net
+
+    def _elaborate_memory_read(self, mem_name: str, addr_expr: Expr) -> Net:
+        """Elaborate a memory read: data = mem[addr]"""
+        # Get memory info
+        data_width, depth = self.memories[mem_name]
+
+        # Elaborate address expression
+        addr_net = self._elaborate_expr(addr_expr)
+
+        # Create MEMRD cell
+        next_id = len(self.netlist.cells)
+        cell = Cell(name=f"memrd_{mem_name}_{next_id}", op=CellOp.MEMRD)
+        cell.attributes["memory"] = mem_name
+        cell.attributes["depth"] = depth
+
+        # Add pins: address input, data output
+        addr_pin = cell.add_input("ADDR", addr_net.width)
+        data_pin = cell.add_output("DATA", data_width)
+
+        # Connect address
+        addr_net.add_sink(addr_pin)
+
+        self.netlist.add_cell(cell)
+
+        # Create output net for read data
+        out_net = Net(name=f"_memrd_{mem_name}_{cell.id}", width=data_width)
+        out_net.set_driver(data_pin)
+        self.netlist.add_net(out_net)
+
+        return out_net
+
+    def _elaborate_memory_write(self, mem_name: str, addr_expr: Expr,
+                                  data_expr: Expr, clk_signal: str,
+                                  enable_expr: Optional[Expr] = None):
+        """Elaborate a memory write: mem[addr] <= data"""
+        # Get memory info
+        data_width, depth = self.memories[mem_name]
+
+        # Elaborate address and data expressions
+        addr_net = self._elaborate_expr(addr_expr)
+        data_net = self._elaborate_expr(data_expr)
+
+        # Create MEMWR cell
+        next_id = len(self.netlist.cells)
+        cell = Cell(name=f"memwr_{mem_name}_{next_id}", op=CellOp.MEMWR)
+        cell.attributes["memory"] = mem_name
+        cell.attributes["depth"] = depth
+
+        # Add pins: clock, address, data, enable
+        clk_pin = cell.add_input("CLK", BitWidth(0, 0))
+        addr_pin = cell.add_input("ADDR", addr_net.width)
+        data_pin = cell.add_input("DATA", data_width)
+
+        # Connect address and data
+        addr_net.add_sink(addr_pin)
+        data_net.add_sink(data_pin)
+
+        # Connect clock
+        if clk_signal in self.net_map:
+            clk_net = self.net_map[clk_signal]
+            clk_net.add_sink(clk_pin)
+
+        # Handle write enable
+        if enable_expr:
+            en_net = self._elaborate_expr(enable_expr)
+            en_pin = cell.add_input("EN", BitWidth(0, 0))
+            en_net.add_sink(en_pin)
+        else:
+            # Always enabled - create constant 1
+            const_one = self._elaborate_const(NumberLiteral(raw="1", value=1, width=1))
+            en_pin = cell.add_input("EN", BitWidth(0, 0))
+            const_one.add_sink(en_pin)
+
+        self.netlist.add_cell(cell)
 
     def _get_width(self, range_node: Optional[Range]) -> BitWidth:
         """Extract bit width from a Range node."""
