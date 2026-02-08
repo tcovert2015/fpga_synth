@@ -462,6 +462,61 @@ for cell, d in sorted(depths.items(), key=lambda x: x[1], reverse=True):
 
 ---
 
+### 5.4 Memory Inference
+
+```python
+from fpga_synth.hdl_parser.elaborator import elaborate
+from fpga_synth.ir.types import CellOp
+
+verilog = """
+module dual_port_ram(
+    input clk,
+    input we,
+    input [7:0] waddr, raddr,
+    input [7:0] din,
+    output [7:0] dout
+);
+    reg [7:0] mem [0:255];
+
+    always @(posedge clk) begin
+        if (we)
+            mem[waddr] <= din;
+    end
+
+    assign dout = mem[raddr];
+endmodule
+"""
+
+ast = parse_verilog(verilog)
+netlist = elaborate(ast)
+
+# Find memory cells
+memrd_cells = [c for c in netlist.cells.values() if c.op == CellOp.MEMRD]
+memwr_cells = [c for c in netlist.cells.values() if c.op == CellOp.MEMWR]
+
+print(f"Memory reads: {len(memrd_cells)}")
+print(f"Memory writes: {len(memwr_cells)}")
+
+for cell in memwr_cells:
+    print(f"\nMemory write: {cell.name}")
+    print(f"  Memory: {cell.attributes['memory']}")
+    print(f"  Depth: {cell.attributes['depth']}")
+    print(f"  Pins: {list(cell.inputs.keys())}")
+```
+
+**Output:**
+```
+Memory reads: 1
+Memory writes: 1
+
+Memory write: memwr_mem_6
+  Memory: mem
+  Depth: 256
+  Pins: ['CLK', 'ADDR', 'DATA', 'EN']
+```
+
+---
+
 ## 6. Tool Integration
 
 ### 6.1 Export to JSON for External Tools

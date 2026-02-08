@@ -74,7 +74,9 @@ Suggestion: Add a semicolon ';' to end the statement
 ### Elaboration (AST → Netlist)
 - Converts AST tree to synthesizable netlist DAG
 - Resolves parameters and generates blocks
-- Creates cells for all operations (AND, ADD, MUX, etc.)
+- **Combinational logic**: AND, OR, XOR, ADD, SUB, MUX, comparisons
+- **Sequential logic**: DFF/DFFR flip-flops, counters, shift registers
+- **Memory inference**: Detects RAM/ROM arrays, creates MEMRD/MEMWR cells
 - Builds hypergraph with cells, nets, and pins
 
 ---

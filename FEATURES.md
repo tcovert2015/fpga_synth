@@ -595,7 +595,100 @@ endmodule
 
 ---
 
-## 7. Real-World Examples
+## 7. Memory Inference
+
+### 7.1 Memory Array Detection
+
+```verilog
+module memory_example(
+    input clk,
+    input [7:0] addr,
+    input [7:0] din,
+    output [7:0] dout
+);
+    // Memory declaration
+    reg [7:0] mem [0:255];
+
+    // Write port
+    always @(posedge clk) begin
+        mem[addr] <= din;
+    end
+
+    // Read port
+    assign dout = mem[addr];
+endmodule
+```
+
+**Elaborated Netlist:**
+- Memory tracked: `mem` (8-bit data, 256 depth)
+- MEMWR cell for write port (with CLK, ADDR, DATA, EN pins)
+- MEMRD cell for read port (with ADDR, DATA pins)
+
+---
+
+### 7.2 Dual-Port RAM
+
+```verilog
+module dual_port_ram(
+    input clk,
+    input we,
+    input [7:0] waddr, raddr,
+    input [7:0] din,
+    output [7:0] dout
+);
+    reg [7:0] mem [0:255];
+
+    always @(posedge clk) begin
+        if (we)
+            mem[waddr] <= din;
+    end
+
+    assign dout = mem[raddr];
+endmodule
+```
+
+**Features:**
+- Separate read and write addresses
+- Independent read/write access
+- Single clock domain
+- Write enable control
+
+---
+
+### 7.3 ROM (Read-Only Memory)
+
+```verilog
+module rom(
+    input [3:0] addr,
+    output [7:0] data
+);
+    reg [7:0] mem [0:15];
+
+    assign data = mem[addr];
+endmodule
+```
+
+**Elaboration:**
+- Only MEMRD cells created (no writes)
+- Combinational read access
+- Can be initialized with `initial` blocks
+
+---
+
+### 7.4 FIFO with Memory
+
+See `tests/test_memory.py:test_fifo_buffer()` - Complete FIFO implementation:
+- Parameterized depth and width
+- Memory array for data storage
+- Read/write pointers with DFF cells
+- Pointer increment with ADD cells
+- Reset handling
+
+**Elaborates to:** MEMRD + MEMWR + DFF + ADD cells
+
+---
+
+## 8. Real-World Examples
 
 ### 7.1 UART Transmitter
 
@@ -620,16 +713,16 @@ See integration tests - Parametric FIFO with:
 
 ---
 
-## 8. Performance
+## 9. Performance
 
-### 8.1 Parser Performance
+### 9.1 Parser Performance
 
 - **Small modules** (<100 lines): <10ms
 - **Medium modules** (100-500 lines): <50ms
 - **Large modules** (500-2000 lines): <200ms
 - **UART example** (120 lines): ~15ms
 
-### 8.2 Elaboration Performance
+### 9.2 Elaboration Performance
 
 - **Simple gates**: <1ms
 - **ALU with muxes**: <5ms
@@ -637,17 +730,17 @@ See integration tests - Parametric FIFO with:
 
 ---
 
-## 9. Test Coverage
+## 10. Test Coverage
 
-### 9.1 Test Statistics
+### 10.1 Test Statistics
 
-- **Total tests**: 149
+- **Total tests**: 164
 - **Parser tests**: 136
-- **Elaborator tests**: 13
+- **Elaborator tests**: 28 (13 combinational + 7 sequential + 8 memory)
 - **Test files**: 16
 - **Coverage**: All Verilog-2005 synthesizable constructs
 
-### 9.2 Test Categories
+### 10.2 Test Categories
 
 - Basic parsing (modules, ports, declarations)
 - Expressions (all operators, precedence)
@@ -663,15 +756,17 @@ See integration tests - Parametric FIFO with:
 - AST visitors
 - JSON serialization
 - Code generation
-- Elaboration
+- Elaboration:
+  - Combinational logic
+  - Sequential logic (flip-flops, counters, shift registers)
+  - Memory inference (RAM, ROM, dual-port, FIFO)
 
 ---
 
-## 10. Future Features
+## 11. Future Features
 
 ### Coming Soon
-- Sequential logic elaboration (flip-flops, FSMs)
-- Memory inference
+- FSM extraction and optimization
 - Module hierarchy and instantiation
 - Tri-state logic
 - Advanced optimization passes
@@ -693,8 +788,11 @@ This FPGA synthesis tool provides:
 ✅ **Comprehensive AST** with visitor pattern and transformations
 ✅ **JSON export/import** for tool integration
 ✅ **Code generation** for pretty-printing
-✅ **Elaboration** to synthesizable netlist IR
-✅ **149 tests** covering all features
-✅ **Real-world examples** (UART, FIFO, ALU)
+✅ **Elaboration** to synthesizable netlist IR with:
+  - Combinational logic (AND, OR, XOR, ADD, MUX, etc.)
+  - Sequential logic (DFF, DFFR flip-flops)
+  - Memory inference (RAM/ROM with MEMRD/MEMWR cells)
+✅ **164 tests** covering all features
+✅ **Real-world examples** (UART, FIFO, ALU, RAM)
 
 **Production-ready frontend for FPGA synthesis!**
