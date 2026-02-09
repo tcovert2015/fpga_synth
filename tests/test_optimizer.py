@@ -239,6 +239,237 @@ def test_no_optimization_on_sequential():
     print("✓ test_no_optimization_on_sequential")
 
 
+def test_identity_elimination_and():
+    """Test: Identity elimination for AND"""
+    verilog = """
+    module test(
+        input wire [7:0] a,
+        output wire [7:0] result
+    );
+        assign result = a & 8'hFF;
+    endmodule
+    """
+    ast = parse_verilog(verilog)
+    netlist = elaborate(ast)
+
+    # Before: should have AND cell
+    and_cells_before = [c for c in netlist.cells.values() if c.op == CellOp.AND]
+    assert len(and_cells_before) >= 1
+
+    # Optimize
+    stats = optimize_netlist(netlist, passes=["identity"])
+
+    # After: AND should be eliminated (x & 0xFF = x for 8-bit)
+    and_cells_after = [c for c in netlist.cells.values() if c.op == CellOp.AND]
+    assert len(and_cells_after) == 0
+    assert stats["identities_eliminated"] >= 1
+
+    print("✓ test_identity_elimination_and")
+
+
+def test_identity_elimination_or():
+    """Test: Identity elimination for OR"""
+    verilog = """
+    module test(
+        input wire [7:0] a,
+        output wire [7:0] result
+    );
+        assign result = a | 8'h00;
+    endmodule
+    """
+    ast = parse_verilog(verilog)
+    netlist = elaborate(ast)
+
+    # Optimize
+    stats = optimize_netlist(netlist, passes=["identity"])
+
+    # After: OR should be eliminated (x | 0 = x)
+    or_cells_after = [c for c in netlist.cells.values() if c.op == CellOp.OR]
+    assert len(or_cells_after) == 0
+    assert stats["identities_eliminated"] >= 1
+
+    print("✓ test_identity_elimination_or")
+
+
+def test_identity_elimination_add():
+    """Test: Identity elimination for ADD"""
+    verilog = """
+    module test(
+        input wire [7:0] a,
+        output wire [7:0] result
+    );
+        assign result = a + 8'h00;
+    endmodule
+    """
+    ast = parse_verilog(verilog)
+    netlist = elaborate(ast)
+
+    # Optimize
+    optimize_netlist(netlist, passes=["identity"])
+
+    # After: ADD should be eliminated (x + 0 = x)
+    add_cells_after = [c for c in netlist.cells.values() if c.op == CellOp.ADD]
+    assert len(add_cells_after) == 0
+
+    print("✓ test_identity_elimination_add")
+
+
+def test_algebraic_simplification_and():
+    """Test: Algebraic simplification for AND"""
+    verilog = """
+    module test(
+        input wire [7:0] a,
+        output wire [7:0] result
+    );
+        assign result = a & a;
+    endmodule
+    """
+    ast = parse_verilog(verilog)
+    netlist = elaborate(ast)
+
+    # Optimize
+    stats = optimize_netlist(netlist, passes=["algebraic"])
+
+    # After: AND should be eliminated (x & x = x)
+    and_cells_after = [c for c in netlist.cells.values() if c.op == CellOp.AND]
+    assert len(and_cells_after) == 0
+    assert stats["algebraic_simplified"] >= 1
+
+    print("✓ test_algebraic_simplification_and")
+
+
+def test_algebraic_simplification_xor():
+    """Test: Algebraic simplification for XOR"""
+    verilog = """
+    module test(
+        input wire [7:0] a,
+        output wire [7:0] result
+    );
+        assign result = a ^ a;
+    endmodule
+    """
+    ast = parse_verilog(verilog)
+    netlist = elaborate(ast)
+
+    # Optimize
+    optimize_netlist(netlist, passes=["algebraic"])
+
+    # After: XOR should be replaced with constant 0 (x ^ x = 0)
+    xor_cells_after = [c for c in netlist.cells.values() if c.op == CellOp.XOR]
+    assert len(xor_cells_after) == 0
+
+    # Should have constant 0
+    const_cells = [c for c in netlist.cells.values() if c.op == CellOp.CONST]
+    assert any(c.attributes.get("value") == 0 for c in const_cells)
+
+    print("✓ test_algebraic_simplification_xor")
+
+
+def test_strength_reduction_multiply():
+    """Test: Strength reduction for multiply by power of 2"""
+    verilog = """
+    module test(
+        input wire [7:0] a,
+        output wire [7:0] result
+    );
+        assign result = a * 8'd4;
+    endmodule
+    """
+    ast = parse_verilog(verilog)
+    netlist = elaborate(ast)
+
+    # Before: should have MUL cell
+    mul_cells_before = [c for c in netlist.cells.values() if c.op == CellOp.MUL]
+    assert len(mul_cells_before) >= 1
+
+    # Optimize
+    stats = optimize_netlist(netlist, passes=["strength_reduce"])
+
+    # After: MUL should be replaced with SHL (multiply by 4 = shift left by 2)
+    mul_cells_after = [c for c in netlist.cells.values() if c.op == CellOp.MUL]
+    shl_cells_after = [c for c in netlist.cells.values() if c.op == CellOp.SHL]
+
+    assert len(mul_cells_after) == 0
+    assert len(shl_cells_after) >= 1
+    assert stats["strength_reduced"] >= 1
+
+    print("✓ test_strength_reduction_multiply")
+
+
+def test_full_optimization_pipeline():
+    """Test: Full optimization pipeline with all passes"""
+    verilog = """
+    module test(
+        input wire [7:0] a,
+        input wire [7:0] b,
+        output wire [7:0] out1,
+        output wire [7:0] out2
+    );
+        wire [7:0] temp1;
+        wire [7:0] temp2;
+        wire [7:0] temp3;
+
+        assign temp1 = a + 8'h00;  // Identity: a + 0 = a
+        assign temp2 = b & b;       // Algebraic: b & b = b
+        assign temp3 = temp1 * 8'd8;  // Strength reduce: * 8 → << 3
+        assign out1 = temp2 ^ temp2;  // Algebraic: x ^ x = 0
+        assign out2 = temp3;
+    endmodule
+    """
+    ast = parse_verilog(verilog)
+    netlist = elaborate(ast)
+
+    cells_before = len([c for c in netlist.cells.values()
+                       if c.op not in (CellOp.MODULE_INPUT, CellOp.MODULE_OUTPUT)])
+
+    # Run full optimization
+    stats = optimize_netlist(netlist)
+
+    cells_after = len([c for c in netlist.cells.values()
+                      if c.op not in (CellOp.MODULE_INPUT, CellOp.MODULE_OUTPUT)])
+
+    # Should have significantly fewer cells
+    assert cells_after < cells_before
+
+    # Verify specific optimizations occurred
+    assert stats.get("identities_eliminated", 0) > 0 or \
+           stats.get("algebraic_simplified", 0) > 0 or \
+           stats.get("strength_reduced", 0) > 0
+
+    print(f"✓ test_full_optimization_pipeline (cells: {cells_before} → {cells_after})")
+
+
+def test_optimization_chain():
+    """Test: Chained optimizations triggering multiple passes"""
+    verilog = """
+    module test(
+        input wire [7:0] a,
+        output wire [7:0] result
+    );
+        wire [7:0] t1;
+        wire [7:0] t2;
+
+        assign t1 = a | 8'h00;     // Identity
+        assign t2 = t1 & 8'hFF;    // Identity
+        assign result = t2 + 8'h00; // Identity
+    endmodule
+    """
+    ast = parse_verilog(verilog)
+    netlist = elaborate(ast)
+
+    # Optimize
+    optimize_netlist(netlist, passes=["identity", "dead_code"])
+
+    # After optimization, should have minimal cells
+    logic_cells = [c for c in netlist.cells.values()
+                   if c.op not in (CellOp.MODULE_INPUT, CellOp.MODULE_OUTPUT, CellOp.CONST)]
+
+    # All intermediate operations should be eliminated
+    assert len(logic_cells) == 0
+
+    print("✓ test_optimization_chain")
+
+
 def run_all():
     """Run all optimizer tests"""
     tests = [
@@ -249,6 +480,14 @@ def run_all():
         test_combined_optimization,
         test_optimization_preserves_outputs,
         test_no_optimization_on_sequential,
+        test_identity_elimination_and,
+        test_identity_elimination_or,
+        test_identity_elimination_add,
+        test_algebraic_simplification_and,
+        test_algebraic_simplification_xor,
+        test_strength_reduction_multiply,
+        test_full_optimization_pipeline,
+        test_optimization_chain,
     ]
 
     passed = 0

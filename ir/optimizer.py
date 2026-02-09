@@ -28,13 +28,14 @@ class NetlistOptimizer:
 
         Args:
             passes: List of passes to run. If None, runs all passes in default order.
-                   Available: "constant_prop", "dead_code", "cse"
+                   Available: "constant_prop", "dead_code", "cse", "identity",
+                             "algebraic", "strength_reduce"
 
         Returns:
             Dictionary of optimization statistics
         """
         if passes is None:
-            passes = ["constant_prop", "dead_code", "cse"]
+            passes = ["identity", "algebraic", "constant_prop", "strength_reduce", "dead_code", "cse"]
 
         stats = {}
 
@@ -45,6 +46,12 @@ class NetlistOptimizer:
                 stats["dead_cells_removed"] = self.dead_code_elimination()
             elif pass_name == "cse":
                 stats["common_subexprs_eliminated"] = self.common_subexpression_elimination()
+            elif pass_name == "identity":
+                stats["identities_eliminated"] = self.identity_elimination()
+            elif pass_name == "algebraic":
+                stats["algebraic_simplified"] = self.algebraic_simplification()
+            elif pass_name == "strength_reduce":
+                stats["strength_reduced"] = self.strength_reduction()
 
         return stats
 
@@ -350,6 +357,243 @@ class NetlistOptimizer:
 
         # Remove the redundant cell
         self.netlist.remove_cell(remove)
+
+    def identity_elimination(self) -> int:
+        """
+        Eliminate identity operations.
+
+        Replaces operations like:
+        - x & 1 = x (AND with all 1s)
+        - x | 0 = x (OR with 0)
+        - x + 0 = x (ADD with 0)
+        - x ^ 0 = x (XOR with 0)
+        - x << 0 = x (shift by 0)
+
+        Returns:
+            Number of identity operations eliminated
+        """
+        eliminated = 0
+        cells_to_replace = []
+
+        for cell_id, cell in list(self.netlist.cells.items()):
+            replacement = None
+
+            # Check for identity operations
+            if cell.op in (CellOp.AND, CellOp.OR, CellOp.XOR, CellOp.ADD, CellOp.SUB,
+                          CellOp.SHL, CellOp.SHR):
+                # Check each input to see if any are constant identity elements
+                for pin_name, pin in cell.inputs.items():
+                    if not pin.net or not pin.net.driver:
+                        continue
+
+                    driver = pin.net.driver.cell
+                    if driver.op != CellOp.CONST:
+                        continue
+
+                    const_value = driver.attributes.get("value", 0)
+
+                    # Determine the other input pin
+                    other_pin = None
+                    if pin_name == "A" and "B" in cell.inputs:
+                        other_pin = "B"
+                    elif pin_name == "B" and "A" in cell.inputs:
+                        other_pin = "A"
+
+                    # Check if this is an identity element
+                    if cell.op == CellOp.AND:
+                        # x & all_1s = x
+                        width = cell.output.width.width
+                        all_ones = (1 << width) - 1
+                        if const_value == all_ones and other_pin:
+                            replacement = (other_pin, cell)
+                            break
+
+                    elif cell.op == CellOp.OR:
+                        # x | 0 = x
+                        if const_value == 0 and other_pin:
+                            replacement = (other_pin, cell)
+                            break
+
+                    elif cell.op == CellOp.XOR:
+                        # x ^ 0 = x
+                        if const_value == 0 and other_pin:
+                            replacement = (other_pin, cell)
+                            break
+
+                    elif cell.op == CellOp.ADD:
+                        # x + 0 = x
+                        if const_value == 0 and other_pin:
+                            replacement = (other_pin, cell)
+                            break
+
+                    elif cell.op == CellOp.SUB:
+                        # x - 0 = x (only when 0 is on the right)
+                        if const_value == 0 and pin_name == "B" and other_pin:
+                            replacement = (other_pin, cell)
+                            break
+
+                    elif cell.op in (CellOp.SHL, CellOp.SHR):
+                        # x << 0 = x, x >> 0 = x (only when 0 is shift amount)
+                        if const_value == 0 and pin_name == "B" and other_pin:
+                            replacement = (other_pin, cell)
+                            break
+
+            if replacement:
+                cells_to_replace.append(replacement)
+                eliminated += 1
+
+        # Apply replacements
+        for pin_name, cell in cells_to_replace:
+            self._replace_with_input(cell, pin_name)
+
+        return eliminated
+
+    def _replace_with_input(self, cell: Cell, input_pin_name: str):
+        """Replace a cell with one of its inputs (bypass operation)."""
+        # Get the input net
+        input_pin = cell.inputs.get(input_pin_name)
+        if not input_pin or not input_pin.net:
+            return
+
+        input_net = input_pin.net
+
+        # Get output net
+        output_net = cell.output.net if hasattr(cell, 'output') and cell.output else None
+        if not output_net:
+            return
+
+        # Reconnect all sinks from output_net to input_net
+        for sink_pin in list(output_net.sinks):
+            output_net.sinks.remove(sink_pin)
+            input_net.add_sink(sink_pin)
+
+        # Remove the cell
+        self.netlist.remove_cell(cell)
+
+    def algebraic_simplification(self) -> int:
+        """
+        Perform algebraic simplifications.
+
+        Simplifies operations like:
+        - x & x = x
+        - x | x = x
+        - x ^ x = 0
+        - x - x = 0
+
+        Returns:
+            Number of simplifications performed
+        """
+        simplified = 0
+        cells_to_replace = []
+
+        for cell_id, cell in list(self.netlist.cells.items()):
+            # Check if both inputs are the same
+            if len(cell.inputs) == 2:
+                input_pins = list(cell.inputs.values())
+                if len(input_pins) == 2:
+                    pin_a, pin_b = input_pins
+                    if (pin_a.net and pin_b.net and
+                        pin_a.net.driver and pin_b.net.driver and
+                        pin_a.net.driver.cell.id == pin_b.net.driver.cell.id):
+
+                        # Same input on both sides
+                        if cell.op in (CellOp.AND, CellOp.OR):
+                            # x & x = x, x | x = x
+                            cells_to_replace.append(("identity", cell, list(cell.inputs.keys())[0]))
+                            simplified += 1
+                        elif cell.op in (CellOp.XOR, CellOp.SUB):
+                            # x ^ x = 0, x - x = 0
+                            cells_to_replace.append(("zero", cell))
+                            simplified += 1
+
+        # Apply replacements
+        for replacement_type, *args in cells_to_replace:
+            if replacement_type == "identity":
+                cell, pin_name = args
+                self._replace_with_input(cell, pin_name)
+            elif replacement_type == "zero":
+                cell = args[0]
+                self._replace_with_constant(cell, 0)
+
+        return simplified
+
+    def strength_reduction(self) -> int:
+        """
+        Reduce expensive operations to cheaper ones.
+
+        Transforms:
+        - x * 2^n → x << n (multiply by power of 2 to shift)
+        - x / 2^n → x >> n (divide by power of 2 to shift)
+
+        Returns:
+            Number of reductions performed
+        """
+        reduced = 0
+        cells_to_transform = []
+
+        for cell_id, cell in list(self.netlist.cells.items()):
+            if cell.op == CellOp.MUL:
+                # Check if multiplying by a power of 2
+                for pin_name, pin in cell.inputs.items():
+                    if not pin.net or not pin.net.driver:
+                        continue
+
+                    driver = pin.net.driver.cell
+                    if driver.op != CellOp.CONST:
+                        continue
+
+                    value = driver.attributes.get("value", 0)
+                    if value > 0 and (value & (value - 1)) == 0:
+                        # Value is a power of 2
+                        shift_amount = (value - 1).bit_length()
+                        other_pin = "B" if pin_name == "A" else "A"
+                        cells_to_transform.append((cell, CellOp.SHL, other_pin, shift_amount))
+                        reduced += 1
+                        break
+
+        # Apply transformations
+        for cell, new_op, input_pin, shift_amount in cells_to_transform:
+            self._transform_to_shift(cell, new_op, input_pin, shift_amount)
+
+        return reduced
+
+    def _transform_to_shift(self, cell: Cell, shift_op: CellOp, input_pin: str, shift_amount: int):
+        """Transform a multiplication/division to a shift."""
+        # Get input net
+        input_net = cell.inputs[input_pin].net
+        output_net = cell.output.net if hasattr(cell, 'output') and cell.output else None
+
+        if not input_net or not output_net:
+            return
+
+        # Create new shift cell
+        shift_cell = Cell(name=f"shift_{cell.name}", op=shift_op)
+
+        # Add pins
+        a_pin = shift_cell.add_input("A", input_net.width)
+        input_net.add_sink(a_pin)
+
+        # Create constant for shift amount
+        const_cell = Cell(name=f"const_{shift_amount}", op=CellOp.CONST)
+        const_cell.attributes["value"] = shift_amount
+        const_pin = const_cell.add_output("Y", BitWidth(0, 0))
+        const_net = Net(name=f"_shift_amt_{shift_amount}", width=BitWidth(0, 0))
+        const_net.set_driver(const_pin)
+        self.netlist.add_net(const_net)
+        self.netlist.add_cell(const_cell)
+
+        b_pin = shift_cell.add_input("B", const_net.width)
+        const_net.add_sink(b_pin)
+
+        out_pin = shift_cell.add_output("Y", output_net.width)
+
+        # Reconnect output
+        output_net.set_driver(out_pin)
+
+        self.netlist.add_cell(shift_cell)
+
+        # Remove old cell
+        self.netlist.remove_cell(cell)
 
 
 def optimize_netlist(netlist: Netlist, passes: list[str] = None) -> Dict[str, int]:
