@@ -35,13 +35,15 @@ class Elaborator:
         self.net_map: Dict[str, Net] = {}  # signal name → Net
         self.parameters: Dict[str, int] = {}  # parameter name → value
         self.memories: Dict[str, tuple[BitWidth, int]] = {}  # memory name → (data_width, depth)
+        self.module_library: Dict[str, Module] = {}  # module_name → Module AST
 
-    def elaborate(self, ast: SourceFile) -> Netlist:
+    def elaborate(self, ast: SourceFile, top_module: Optional[str] = None) -> Netlist:
         """
         Elaborate an AST into a netlist.
 
         Args:
             ast: Parsed Verilog source
+            top_module: Name of top module to elaborate (defaults to first module)
 
         Returns:
             Elaborated netlist
@@ -52,9 +54,20 @@ class Elaborator:
         if len(ast.modules) == 0:
             raise ElaborationError("No modules found in AST")
 
-        # For now, elaborate only the first module
-        # TODO: Handle module hierarchy
-        module = ast.modules[0]
+        # Build module library
+        self.module_library = {}
+        for module in ast.modules:
+            self.module_library[module.name] = module
+
+        # Find top module
+        if top_module:
+            if top_module not in self.module_library:
+                raise ElaborationError(f"Top module '{top_module}' not found")
+            module = self.module_library[top_module]
+        else:
+            # Default to first module
+            module = ast.modules[0]
+
         return self.elaborate_module(module)
 
     def elaborate_module(self, module: Module) -> Netlist:
@@ -115,7 +128,10 @@ class Elaborator:
                 self.netlist.add_cell(cell)
                 self.netlist.outputs[port.name] = cell
 
-                # Note: Output net is created when the driving logic is elaborated
+                # Create net for this output (will be driven by internal logic)
+                net = Net(name=port.name, width=width)
+                self.netlist.add_net(net)
+                self.net_map[port.name] = net
 
     def _elaborate_declarations(self, module: Module):
         """Create nets for wire/reg declarations and detect memory arrays."""
@@ -150,7 +166,128 @@ class Elaborator:
                 self._elaborate_assign(item)
             elif isinstance(item, AlwaysBlock):
                 self._elaborate_always_block(item)
-            # TODO: InitialBlock, ModuleInstance, etc.
+            elif isinstance(item, ModuleInstance):
+                self._elaborate_module_instance(item)
+            # TODO: InitialBlock, etc.
+
+    def _elaborate_module_instance(self, inst: ModuleInstance):
+        """
+        Elaborate a module instance by flattening it into the parent netlist.
+
+        Creates a sub-netlist for the instance and merges it into the parent,
+        with all cell/net names prefixed by the instance name.
+        """
+        # Look up module definition
+        if inst.module_name not in self.module_library:
+            raise ElaborationError(f"Module '{inst.module_name}' not found for instance '{inst.instance_name}'")
+
+        child_module = self.module_library[inst.module_name]
+
+        # Save parent context
+        parent_netlist = self.netlist
+        parent_net_map = self.net_map
+        parent_parameters = self.parameters
+        parent_memories = self.memories
+
+        # Create new context for child module
+        child_elaborator = Elaborator()
+        child_elaborator.module_library = self.module_library
+
+        # Override parameters if provided
+        child_parameters = {}
+        for param in child_module.params:
+            if param.value:
+                child_parameters[param.name] = self._eval_const_expr(param.value)
+
+        # Apply parameter overrides from instantiation
+        for param_conn in inst.params:
+            if param_conn.expr:
+                child_parameters[param_conn.port_name] = self._eval_const_expr(param_conn.expr)
+
+        child_elaborator.parameters = child_parameters
+
+        # Elaborate child module
+        child_netlist = child_elaborator.elaborate_module(child_module)
+
+        # Build port connection map: child_port_name → parent_net
+        port_map: Dict[str, Net] = {}
+        for port_conn in inst.ports:
+            if port_conn.expr:
+                # Elaborate the connection expression in parent context
+                parent_net = self._elaborate_expr(port_conn.expr)
+                port_map[port_conn.port_name] = parent_net
+
+        # Flatten child netlist into parent with name prefix
+        prefix = f"{inst.instance_name}."
+        self._flatten_netlist(child_netlist, prefix, port_map)
+
+        # Restore parent context
+        self.netlist = parent_netlist
+        self.net_map = parent_net_map
+        self.parameters = parent_parameters
+        self.memories = parent_memories
+
+    def _flatten_netlist(self, child_netlist: Netlist, prefix: str, port_map: Dict[str, Net]):
+        """
+        Flatten a child netlist into the parent netlist.
+
+        Args:
+            child_netlist: The child module's netlist
+            prefix: Name prefix for all cells/nets (e.g., "inst1.")
+            port_map: Maps child port names to parent nets
+        """
+        # Map child nets to parent nets (for renaming)
+        net_rename_map: Dict[str, Net] = {}
+
+        # First, handle port connections
+        for port_name, parent_net in port_map.items():
+            if port_name in child_netlist.inputs:
+                # Child input connects to parent net
+                child_input_cell = child_netlist.inputs[port_name]
+                child_output_net = child_input_cell.output.net
+                if child_output_net:
+                    net_rename_map[child_output_net.name] = parent_net
+
+            elif port_name in child_netlist.outputs:
+                # Child output connects to parent net
+                child_output_cell = child_netlist.outputs[port_name]
+                child_input_net = list(child_output_cell.inputs.values())[0].net
+                if child_input_net:
+                    net_rename_map[child_input_net.name] = parent_net
+
+        # Copy internal nets (non-port nets) with prefix
+        for net_id, child_net in child_netlist.nets.items():
+            if child_net.name not in net_rename_map:
+                # Create new net in parent with prefixed name
+                new_net = Net(name=prefix + child_net.name, width=child_net.width)
+                self.netlist.add_net(new_net)
+                net_rename_map[child_net.name] = new_net
+
+        # Copy internal cells (non-port cells) with prefix
+        for cell_id, child_cell in child_netlist.cells.items():
+            # Skip MODULE_INPUT and MODULE_OUTPUT cells (handled via port connections)
+            if child_cell.op in (CellOp.MODULE_INPUT, CellOp.MODULE_OUTPUT):
+                continue
+
+            # Create new cell in parent with prefixed name
+            new_cell = Cell(name=prefix + child_cell.name, op=child_cell.op)
+            new_cell.attributes = child_cell.attributes.copy()
+
+            # Copy inputs and reconnect to renamed nets
+            for pin_name, child_pin in child_cell.inputs.items():
+                new_pin = new_cell.add_input(pin_name, child_pin.width)
+                if child_pin.net and child_pin.net.name in net_rename_map:
+                    parent_net = net_rename_map[child_pin.net.name]
+                    parent_net.add_sink(new_pin)
+
+            # Copy outputs and reconnect to renamed nets
+            for pin_name, child_pin in child_cell.outputs.items():
+                new_pin = new_cell.add_output(pin_name, child_pin.width)
+                if child_pin.net and child_pin.net.name in net_rename_map:
+                    parent_net = net_rename_map[child_pin.net.name]
+                    parent_net.set_driver(new_pin)
+
+            self.netlist.add_cell(new_cell)
 
     def _elaborate_assign(self, assign: ContinuousAssign):
         """
@@ -723,15 +860,16 @@ class Elaborator:
         raise ElaborationError(f"Cannot evaluate non-constant expression: {type(expr).__name__}")
 
 
-def elaborate(ast: SourceFile) -> Netlist:
+def elaborate(ast: SourceFile, top_module: Optional[str] = None) -> Netlist:
     """
     Convenience function to elaborate an AST.
 
     Args:
         ast: Parsed Verilog source
+        top_module: Name of top module to elaborate (defaults to first module)
 
     Returns:
         Elaborated netlist
     """
     elaborator = Elaborator()
-    return elaborator.elaborate(ast)
+    return elaborator.elaborate(ast, top_module)
