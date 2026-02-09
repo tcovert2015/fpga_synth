@@ -517,6 +517,63 @@ Memory write: memwr_mem_6
 
 ---
 
+### 5.5 Module Hierarchy
+
+```python
+from fpga_synth.hdl_parser.elaborator import elaborate
+
+verilog = """
+module half_adder(
+    input wire a, b,
+    output wire sum, carry
+);
+    assign sum = a ^ b;
+    assign carry = a & b;
+endmodule
+
+module full_adder(
+    input wire a, b, cin,
+    output wire sum, cout
+);
+    wire s1;
+    wire c1;
+    wire c2;
+
+    half_adder ha1 (.a(a), .b(b), .sum(s1), .carry(c1));
+    half_adder ha2 (.a(s1), .b(cin), .sum(sum), .carry(c2));
+    assign cout = c1 | c2;
+endmodule
+"""
+
+ast = parse_verilog(verilog)
+netlist = elaborate(ast, top_module="full_adder")
+
+print(f"Total cells: {len(netlist.cells)}")
+
+# Find hierarchical cells
+for cell_id, cell in netlist.cells.items():
+    if '.' in cell.name:
+        # Cell from instantiated module
+        print(f"  Hierarchical: {cell.name} ({cell.op.name})")
+```
+
+**Output:**
+```
+Total cells: 10
+  Hierarchical: ha1.xor_sum (XOR)
+  Hierarchical: ha1.and_carry (AND)
+  Hierarchical: ha2.xor_sum (XOR)
+  Hierarchical: ha2.and_carry (AND)
+```
+
+**Key Points:**
+- `top_module` parameter selects which module to elaborate
+- Child modules flattened into parent netlist
+- All child cells prefixed with instance name
+- Hierarchy collapsed to flat netlist for synthesis
+
+---
+
 ## 6. Tool Integration
 
 ### 6.1 Export to JSON for External Tools

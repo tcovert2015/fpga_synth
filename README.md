@@ -77,6 +77,7 @@ Suggestion: Add a semicolon ';' to end the statement
 - **Combinational logic**: AND, OR, XOR, ADD, SUB, MUX, comparisons
 - **Sequential logic**: DFF/DFFR flip-flops, counters, shift registers
 - **Memory inference**: Detects RAM/ROM arrays, creates MEMRD/MEMWR cells
+- **Module hierarchy**: Supports instantiation, nesting, flattening with name prefixes
 - Builds hypergraph with cells, nets, and pins
 
 ---

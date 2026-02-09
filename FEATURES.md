@@ -688,7 +688,150 @@ See `tests/test_memory.py:test_fifo_buffer()` - Complete FIFO implementation:
 
 ---
 
-## 8. Real-World Examples
+## 8. Module Hierarchy and Instantiation
+
+### 8.1 Simple Module Instantiation
+
+```verilog
+module inverter(
+    input wire a,
+    output wire b
+);
+    assign b = ~a;
+endmodule
+
+module top(
+    input wire x,
+    output wire y
+);
+    inverter inv1 (.a(x), .b(y));
+endmodule
+```
+
+**Elaboration:**
+- Child module `inverter` elaborated independently
+- NOT cell created in child netlist
+- Child netlist flattened into parent with prefix `inv1.`
+- Result: Cell named `inv1.not_b`
+
+---
+
+### 8.2 Multiple Instances
+
+```verilog
+module and_gate(
+    input wire a, b,
+    output wire c
+);
+    assign c = a & b;
+endmodule
+
+module top(
+    input wire [3:0] in,
+    output wire [1:0] out
+);
+    and_gate g1 (.a(in[0]), .b(in[1]), .c(out[0]));
+    and_gate g2 (.a(in[2]), .b(in[3]), .c(out[1]));
+endmodule
+```
+
+**Features:**
+- Same module instantiated multiple times
+- Each instance gets unique name prefix
+- Independent port connections
+- Cells: `g1.and_c` and `g2.and_c`
+
+---
+
+### 8.3 Parameterized Instances
+
+```verilog
+module adder #(
+    parameter WIDTH = 8
+) (
+    input wire [WIDTH-1:0] a, b,
+    output wire [WIDTH-1:0] sum
+);
+    assign sum = a + b;
+endmodule
+
+module top;
+    wire [3:0] x, y, z;
+    adder #(.WIDTH(4)) add4 (.a(x), .b(y), .sum(z));
+endmodule
+```
+
+**Features:**
+- Parameter override in instantiation
+- Child elaborated with overridden WIDTH=4
+- Proper bit width propagation
+
+---
+
+### 8.4 Nested Hierarchy
+
+```verilog
+module inverter(input a, output b);
+    assign b = ~a;
+endmodule
+
+module buffer(input x, output y);
+    wire tmp;
+    inverter i1 (.a(x), .b(tmp));
+    inverter i2 (.a(tmp), .b(y));
+endmodule
+
+module top(input in, output out);
+    buffer buf (.x(in), .y(out));
+endmodule
+```
+
+**Elaboration:**
+- 3-level hierarchy: top → buffer → inverter
+- Recursive flattening
+- Nested prefixes: `buf.i1.not_b`, `buf.i2.not_b`
+- All hierarchy collapsed into flat netlist
+
+---
+
+### 8.5 Hierarchical Sequential Logic
+
+```verilog
+module dff(
+    input wire clk, d,
+    output reg q
+);
+    always @(posedge clk) q <= d;
+endmodule
+
+module shift_reg(
+    input wire clk, din,
+    output wire dout
+);
+    wire q0;
+    dff d0 (.clk(clk), .d(din), .q(q0));
+    dff d1 (.clk(clk), .d(q0), .q(dout));
+endmodule
+```
+
+**Elaboration:**
+- Sequential logic across hierarchy
+- 2 DFF cells: `d0.dff_q` and `d1.dff_q`
+- Clock signal properly connected to both instances
+
+---
+
+### 8.6 Full Adder from Half Adders
+
+See `tests/test_hierarchy.py:test_hierarchical_with_logic()`:
+- Half adder module with XOR and AND
+- Full adder built from 2 half adders + OR gate
+- Mixed hierarchy: instantiated modules + direct logic
+- Demonstrates realistic hierarchical design
+
+---
+
+## 9. Real-World Examples
 
 ### 7.1 UART Transmitter
 
@@ -713,16 +856,16 @@ See integration tests - Parametric FIFO with:
 
 ---
 
-## 9. Performance
+## 10. Performance
 
-### 9.1 Parser Performance
+### 10.1 Parser Performance
 
 - **Small modules** (<100 lines): <10ms
 - **Medium modules** (100-500 lines): <50ms
 - **Large modules** (500-2000 lines): <200ms
 - **UART example** (120 lines): ~15ms
 
-### 9.2 Elaboration Performance
+### 10.2 Elaboration Performance
 
 - **Simple gates**: <1ms
 - **ALU with muxes**: <5ms
@@ -730,17 +873,17 @@ See integration tests - Parametric FIFO with:
 
 ---
 
-## 10. Test Coverage
+## 11. Test Coverage
 
-### 10.1 Test Statistics
+### 11.1 Test Statistics
 
-- **Total tests**: 164
+- **Total tests**: 171
 - **Parser tests**: 136
-- **Elaborator tests**: 28 (13 combinational + 7 sequential + 8 memory)
+- **Elaborator tests**: 35 (13 combinational + 7 sequential + 8 memory + 7 hierarchy)
 - **Test files**: 16
 - **Coverage**: All Verilog-2005 synthesizable constructs
 
-### 10.2 Test Categories
+### 11.2 Test Categories
 
 - Basic parsing (modules, ports, declarations)
 - Expressions (all operators, precedence)
@@ -760,16 +903,16 @@ See integration tests - Parametric FIFO with:
   - Combinational logic
   - Sequential logic (flip-flops, counters, shift registers)
   - Memory inference (RAM, ROM, dual-port, FIFO)
+  - Module hierarchy (instantiation, nesting, parameters)
 
 ---
 
-## 11. Future Features
+## 12. Future Features
 
 ### Coming Soon
 - FSM extraction and optimization
-- Module hierarchy and instantiation
 - Tri-state logic
-- Advanced optimization passes
+- Advanced optimization passes (constant propagation, dead code elimination)
 
 ### Planned
 - Logic optimization (constant prop, CSE, dead code)
@@ -792,7 +935,8 @@ This FPGA synthesis tool provides:
   - Combinational logic (AND, OR, XOR, ADD, MUX, etc.)
   - Sequential logic (DFF, DFFR flip-flops)
   - Memory inference (RAM/ROM with MEMRD/MEMWR cells)
-✅ **164 tests** covering all features
+  - Module hierarchy (instantiation, nesting, flattening)
+✅ **171 tests** covering all features
 ✅ **Real-world examples** (UART, FIFO, ALU, RAM)
 
 **Production-ready frontend for FPGA synthesis!**
