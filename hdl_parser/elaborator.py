@@ -130,6 +130,7 @@ class Elaborator:
 
                 # Create net for this output (will be driven by internal logic)
                 net = Net(name=port.name, width=width)
+                net.add_sink(in_pin)  # Connect net to MODULE_OUTPUT input
                 self.netlist.add_net(net)
                 self.net_map[port.name] = net
 
